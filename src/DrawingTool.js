@@ -9,9 +9,20 @@ import {
   Container,
   IconButton,
   Tooltip,
-  ButtonGroup
+  ButtonGroup,
+  Drawer,
+  Paper,
+  Divider,
+  Grid
 } from '@mui/material';
-import { Clear, Info, Edit, AdsClick } from '@mui/icons-material';
+import {
+  Clear,
+  Info,
+  Edit,
+  AdsClick,
+  Save,
+  LibraryBooks
+} from '@mui/icons-material';
 
 const DrawingTool = () => {
   const [lines, setLines] = useState([]);
@@ -26,21 +37,27 @@ const DrawingTool = () => {
     lineIndex: -1,
     pointIndex: -1
   });
+  const [isDraggingFromLibrary, setIsDraggingFromLibrary] = useState(false);
+  const [draggedDrawing, setDraggedDrawing] = useState(null);
   const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
   const [selectionStart, setSelectionStart] = useState({ x: 0, y: 0 });
   const [selectionEnd, setSelectionEnd] = useState({ x: 0, y: 0 });
+  const [library, setLibrary] = useState([]);
+  const [libraryOpen, setLibraryOpen] = useState(true);
   const stageRef = useRef();
 
   const GRID_SIZE = 25; // Grid spacing in pixels
   const ENDPOINT_RADIUS = 6; // Radius of endpoint circles
+  const LIBRARY_WIDTH = 250; // Width of the library sidebar
+  const THUMBNAIL_SIZE = 100; // Size of thumbnail previews
 
   const renderGrid = () => {
-    const width = window.innerWidth;
+    const canvasWidth = window.innerWidth - (libraryOpen ? LIBRARY_WIDTH : 0);
     const height = window.innerHeight - 64;
     const gridLines = [];
 
     // Vertical lines
-    for (let x = 0; x <= width; x += GRID_SIZE) {
+    for (let x = 0; x <= canvasWidth; x += GRID_SIZE) {
       gridLines.push(
         <Line
           key={`v-${x}`}
@@ -57,7 +74,7 @@ const DrawingTool = () => {
       gridLines.push(
         <Line
           key={`h-${y}`}
-          points={[0, y, width, y]}
+          points={[0, y, canvasWidth, y]}
           stroke="#e0e0e0"
           strokeWidth={0.5}
           opacity={0.5}
@@ -331,6 +348,11 @@ const DrawingTool = () => {
   };
 
   const handleMouseMove = e => {
+    if (isDraggingFromLibrary && draggedDrawing) {
+      // Handle dragging from library - just update cursor, actual placement happens on drop
+      return;
+    }
+
     if (mode === 'draw' && isDrawing) {
       // Clear existing snap timer
       if (snapTimer) {
@@ -418,7 +440,31 @@ const DrawingTool = () => {
     }
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = e => {
+    if (isDraggingFromLibrary && draggedDrawing) {
+      // Drop the library drawing into the canvas
+      const stage = e.target.getStage();
+      const dropPos = stage.getPointerPosition();
+
+      // Calculate bounds of the dragged drawing
+      const bounds = calculateDrawingBounds(draggedDrawing.lines);
+      const offsetX = dropPos.x - bounds.minX;
+      const offsetY = dropPos.y - bounds.minY;
+
+      // Add the drawing lines to current canvas with offset
+      const newLines = draggedDrawing.lines.map(line => ({
+        ...line,
+        points: line.points.map((point, index) =>
+          index % 2 === 0 ? point + offsetX : point + offsetY
+        )
+      }));
+
+      setLines([...lines, ...newLines]);
+      setIsDraggingFromLibrary(false);
+      setDraggedDrawing(null);
+      return;
+    }
+
     if (mode === 'draw') {
       setIsDrawing(false);
 
@@ -460,6 +506,44 @@ const DrawingTool = () => {
     }
   };
 
+  const calculateDrawingBounds = drawingLines => {
+    if (!drawingLines || drawingLines.length === 0) {
+      return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    }
+
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+
+    drawingLines.forEach(line => {
+      for (let i = 0; i < line.points.length; i += 2) {
+        const x = line.points[i];
+        const y = line.points[i + 1];
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+    });
+
+    return { minX, minY, maxX, maxY };
+  };
+
+  const saveToLibrary = () => {
+    if (lines.length === 0) return;
+
+    const newDrawing = {
+      id: Date.now(),
+      name: `Drawing ${library.length + 1}`,
+      lines: JSON.parse(JSON.stringify(lines)), // Deep copy
+      timestamp: new Date().toISOString(),
+      bounds: calculateDrawingBounds(lines)
+    };
+
+    setLibrary([...library, newDrawing]);
+  };
+
   const clearCanvas = () => {
     setLines([]);
     setSelectedLineIndices([]);
@@ -497,6 +581,16 @@ const DrawingTool = () => {
     }
   };
 
+  const startDragFromLibrary = (drawing, e) => {
+    e.preventDefault();
+    setIsDraggingFromLibrary(true);
+    setDraggedDrawing(drawing);
+  };
+
+  const deleteFromLibrary = drawingId => {
+    setLibrary(library.filter(drawing => drawing.id !== drawingId));
+  };
+
   // Cleanup timer on unmount and add keyboard listener
   useEffect(() => {
     // Add keyboard event listener
@@ -511,6 +605,7 @@ const DrawingTool = () => {
   }, [snapTimer, selectedLineIndices]);
 
   const getCursorStyle = () => {
+    if (isDraggingFromLibrary) return 'copy';
     if (mode === 'draw') return 'crosshair';
     if (mode === 'select') {
       if (isDragging || isDraggingEndpoint) return 'grabbing';
@@ -520,6 +615,10 @@ const DrawingTool = () => {
   };
 
   const getHelpText = () => {
+    if (isDraggingFromLibrary) {
+      return 'Drop the drawing anywhere on the canvas to add it to your current work';
+    }
+
     switch (mode) {
       case 'draw':
         return 'Hold still while drawing to snap to a straight line';
@@ -590,104 +689,227 @@ const DrawingTool = () => {
     ];
   };
 
+  const renderThumbnail = drawing => {
+    const bounds = drawing.bounds;
+    const drawingWidth = bounds.maxX - bounds.minX;
+    const drawingHeight = bounds.maxY - bounds.minY;
+
+    if (drawingWidth === 0 || drawingHeight === 0) return null;
+
+    const scale =
+      Math.min(THUMBNAIL_SIZE / drawingWidth, THUMBNAIL_SIZE / drawingHeight) *
+      0.8;
+    const offsetX =
+      (THUMBNAIL_SIZE - drawingWidth * scale) / 2 - bounds.minX * scale;
+    const offsetY =
+      (THUMBNAIL_SIZE - drawingHeight * scale) / 2 - bounds.minY * scale;
+
+    return (
+      <Stage width={THUMBNAIL_SIZE} height={THUMBNAIL_SIZE}>
+        <Layer>
+          {drawing.lines.map((line, i) => (
+            <Line
+              key={i}
+              points={line.points.map((point, index) =>
+                index % 2 === 0
+                  ? point * scale + offsetX
+                  : point * scale + offsetY
+              )}
+              stroke={line.stroke}
+              strokeWidth={Math.max(0.5, line.strokeWidth * scale)}
+              tension={line.isSnapped ? 0 : 0.5}
+              lineCap="round"
+              lineJoin="round"
+            />
+          ))}
+        </Layer>
+      </Stage>
+    );
+  };
+
   return (
-    <Box
-      sx={{
-        width: '100%',
-        height: '100vh',
-        display: 'flex',
-        flexDirection: 'column'
-      }}
-    >
-      <AppBar position="static" color="default" elevation={1}>
-        <Toolbar>
-          <IconButton onClick={clearCanvas}>
-            <Clear />
-          </IconButton>
+    <Box sx={{ display: 'flex', width: '100%', height: '100vh' }}>
+      {/* Main drawing area */}
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <AppBar position="static" color="default" elevation={1}>
+          <Toolbar>
+            <IconButton onClick={clearCanvas}>
+              <Clear />
+            </IconButton>
 
-          <Box
-            sx={{ display: 'flex', alignItems: 'center', gap: 1, flexGrow: 1 }}
+            <IconButton
+              onClick={saveToLibrary}
+              disabled={lines.length === 0}
+              color={lines.length > 0 ? 'primary' : 'default'}
+            >
+              <Save />
+            </IconButton>
+
+            <IconButton onClick={() => setLibraryOpen(!libraryOpen)}>
+              <LibraryBooks />
+            </IconButton>
+
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                flexGrow: 1,
+                ml: 2
+              }}
+            >
+              <Info color="action" fontSize="small" />
+              <Typography variant="body2" color="text.secondary">
+                {getHelpText()}
+              </Typography>
+            </Box>
+
+            <ButtonGroup variant="outlined" sx={{ ml: 2 }}>
+              <Tooltip title="Draw Mode">
+                <IconButton
+                  onClick={() => setModeAndReset('draw')}
+                  color={mode === 'draw' ? 'primary' : 'default'}
+                >
+                  <Edit />
+                </IconButton>
+              </Tooltip>
+
+              <Tooltip title="Select & Drag Mode">
+                <IconButton
+                  onClick={() => setModeAndReset('select')}
+                  color={mode === 'select' ? 'primary' : 'default'}
+                >
+                  <AdsClick />
+                </IconButton>
+              </Tooltip>
+            </ButtonGroup>
+          </Toolbar>
+        </AppBar>
+
+        <Box sx={{ flex: 1, backgroundColor: 'white' }}>
+          <Stage
+            width={window.innerWidth - (libraryOpen ? LIBRARY_WIDTH : 0)}
+            height={window.innerHeight - 64}
+            onMouseDown={handleMouseDown}
+            onMousemove={handleMouseMove}
+            onMouseup={handleMouseUp}
+            ref={stageRef}
+            style={{ cursor: getCursorStyle() }}
           >
-            <Info color="action" fontSize="small" />
-            <Typography variant="body2" color="text.secondary">
-              {getHelpText()}
-            </Typography>
-          </Box>
+            {/* Grid Layer - Behind everything */}
+            <Layer>{renderGrid()}</Layer>
 
-          <ButtonGroup variant="outlined" sx={{ ml: 2 }}>
-            <Tooltip title="Draw Mode">
-              <IconButton
-                onClick={() => setModeAndReset('draw')}
-                color={mode === 'draw' ? 'primary' : 'default'}
-              >
-                <Edit />
-              </IconButton>
-            </Tooltip>
+            {/* Drawing Layer - On top of grid */}
+            <Layer>
+              {lines.map((line, i) => {
+                const style = getLineStyle(i);
+                return (
+                  <Line
+                    key={i}
+                    points={line.points}
+                    stroke={style.stroke}
+                    strokeWidth={style.strokeWidth}
+                    dash={style.dash}
+                    tension={line.isSnapped ? 0 : 0.5}
+                    lineCap="round"
+                    lineJoin="round"
+                    globalCompositeOperation="source-over"
+                    opacity={style.opacity}
+                  />
+                );
+              })}
 
-            <Tooltip title="Select & Drag Mode">
-              <IconButton
-                onClick={() => setModeAndReset('select')}
-                color={mode === 'select' ? 'primary' : 'default'}
-              >
-                <AdsClick />
-              </IconButton>
-            </Tooltip>
-          </ButtonGroup>
-        </Toolbar>
-      </AppBar>
+              {/* Endpoint handles for single selected line */}
+              {renderEndpointHandles()}
 
-      <Box sx={{ flex: 1, backgroundColor: 'white' }}>
-        <Stage
-          width={window.innerWidth}
-          height={window.innerHeight - 64} // Account for AppBar height
-          onMouseDown={handleMouseDown}
-          onMousemove={handleMouseMove}
-          onMouseup={handleMouseUp}
-          ref={stageRef}
-          style={{ cursor: getCursorStyle() }}
-        >
-          {/* Grid Layer - Behind everything */}
-          <Layer>{renderGrid()}</Layer>
-
-          {/* Drawing Layer - On top of grid */}
-          <Layer>
-            {lines.map((line, i) => {
-              const style = getLineStyle(i);
-              return (
-                <Line
-                  key={i}
-                  points={line.points}
-                  stroke={style.stroke}
-                  strokeWidth={style.strokeWidth}
-                  dash={style.dash}
-                  tension={line.isSnapped ? 0 : 0.5}
-                  lineCap="round"
-                  lineJoin="round"
-                  globalCompositeOperation="source-over"
-                  opacity={style.opacity}
+              {/* Selection box */}
+              {isSelecting && getSelectionBox() && (
+                <Rect
+                  x={getSelectionBox().x}
+                  y={getSelectionBox().y}
+                  width={getSelectionBox().width}
+                  height={getSelectionBox().height}
+                  stroke="#0066ff"
+                  strokeWidth={1}
+                  dash={[3, 3]}
+                  fill="rgba(0, 102, 255, 0.1)"
                 />
-              );
-            })}
-
-            {/* Endpoint handles for single selected line */}
-            {renderEndpointHandles()}
-
-            {/* Selection box */}
-            {isSelecting && getSelectionBox() && (
-              <Rect
-                x={getSelectionBox().x}
-                y={getSelectionBox().y}
-                width={getSelectionBox().width}
-                height={getSelectionBox().height}
-                stroke="#0066ff"
-                strokeWidth={1}
-                dash={[3, 3]}
-                fill="rgba(0, 102, 255, 0.1)"
-              />
-            )}
-          </Layer>
-        </Stage>
+              )}
+            </Layer>
+          </Stage>
+        </Box>
       </Box>
+
+      {/* Library Sidebar */}
+      <Drawer
+        anchor="right"
+        variant="persistent"
+        open={libraryOpen}
+        sx={{
+          width: LIBRARY_WIDTH,
+          flexShrink: 0,
+          '& .MuiDrawer-paper': {
+            width: LIBRARY_WIDTH,
+            boxSizing: 'border-box',
+            top: 64,
+            height: 'calc(100vh - 64px)'
+          }
+        }}
+      >
+        <Box sx={{ p: 2 }}>
+          <Typography variant="h6" gutterBottom>
+            Drawing Library
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Drag thumbnails to canvas to reuse drawings
+          </Typography>
+
+          <Divider sx={{ mb: 2 }} />
+
+          <Grid container spacing={1}>
+            {library.map(drawing => (
+              <Grid item xs={6} key={drawing.id}>
+                <Paper
+                  sx={{
+                    p: 1,
+                    cursor: 'grab',
+                    border: '1px solid #e0e0e0',
+                    '&:hover': {
+                      border: '1px solid #1976d2',
+                      boxShadow: 1
+                    }
+                  }}
+                  onMouseDown={e => startDragFromLibrary(drawing, e)}
+                  onDoubleClick={() => deleteFromLibrary(drawing.id)}
+                >
+                  <Box
+                    sx={{ display: 'flex', justifyContent: 'center', mb: 1 }}
+                  >
+                    {renderThumbnail(drawing)}
+                  </Box>
+                  <Typography
+                    variant="caption"
+                    sx={{ textAlign: 'center', display: 'block' }}
+                  >
+                    {drawing.name}
+                  </Typography>
+                </Paper>
+              </Grid>
+            ))}
+          </Grid>
+
+          {library.length === 0 && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ textAlign: 'center', mt: 4 }}
+            >
+              No saved drawings yet. Create some drawings and click the Save
+              button to add them to your library.
+            </Typography>
+          )}
+        </Box>
+      </Drawer>
     </Box>
   );
 };
