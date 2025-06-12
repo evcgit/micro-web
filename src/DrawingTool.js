@@ -1666,7 +1666,7 @@ const DrawingTool = () => {
       >
         <Stage
           width={window.innerWidth - (libraryOpen ? LIBRARY_WIDTH : 0)}
-          height={window.innerHeight - TOP_BAR_HEIGHT}
+          height={window.innerHeight}
           onMouseDown={handleMouseDown}
           onMousemove={handleMouseMove}
           onMouseup={handleMouseUp}
@@ -1771,55 +1771,13 @@ const DrawingTool = () => {
             bottom: 16,
             right: libraryOpen ? LIBRARY_WIDTH + 16 : 16,
             display: 'flex',
-            flexDirection: 'column',
+            flexDirection: 'row',
             gap: 1,
             zIndex: 1000
           }}
         >
-          {/* Zoom Controls */}
-          <Paper
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              bgcolor: 'white',
-              borderRadius: '8px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-              overflow: 'hidden'
-            }}
-          >
-            <IconButton
-              onClick={handleZoomIn}
-              size="small"
-              sx={{ borderRadius: 0 }}
-            >
-              <ZoomIn fontSize="small" />
-            </IconButton>
-            <Divider />
-            <Box sx={{ px: 1, py: 0.5, minWidth: 40, textAlign: 'center' }}>
-              <Typography variant="caption" sx={{ fontSize: '11px' }}>
-                {Math.round(zoom * 100)}%
-              </Typography>
-            </Box>
-            <Divider />
-            <IconButton
-              onClick={handleZoomOut}
-              size="small"
-              sx={{ borderRadius: 0 }}
-            >
-              <ZoomOut fontSize="small" />
-            </IconButton>
-            <Divider />
-            <IconButton
-              onClick={handleZoomReset}
-              size="small"
-              sx={{ borderRadius: 0 }}
-            >
-              <ZoomOutMap fontSize="small" />
-            </IconButton>
-          </Paper>
-
-          {/* Action Buttons */}
-          <Box sx={{ display: 'flex', gap: 1 }}>
+					{/* Action Buttons */}
+					<Box sx={{ display: 'flex', gap: 1 }}>
             <Fab
               size="small"
               onClick={saveToLibrary}
@@ -1848,6 +1806,45 @@ const DrawingTool = () => {
               <LibraryBooks fontSize="small" />
             </Fab>
           </Box>
+
+          {/* Zoom Controls */}
+          <Paper
+            sx={{
+              display: 'flex',
+              flexDirection: 'row-reverse',
+              bgcolor: 'white',
+              borderRadius: '8px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+              overflow: 'hidden'
+            }}
+          >
+            <IconButton
+              onClick={handleZoomIn}
+              size="small"
+              sx={{ borderRadius: 0 }}
+            >
+              <ZoomIn fontSize="small" />
+            </IconButton>
+            <Box sx={{ px: 1, py: 0.5, minWidth: 40, textAlign: 'center' }}>
+              <Typography variant="caption" sx={{ fontSize: '11px' }}>
+                {Math.round(zoom * 100)}%
+              </Typography>
+            </Box>
+            <IconButton
+              onClick={handleZoomOut}
+              size="small"
+              sx={{ borderRadius: 0 }}
+            >
+              <ZoomOut fontSize="small" />
+            </IconButton>
+            <IconButton
+              onClick={handleZoomReset}
+              size="small"
+              sx={{ borderRadius: 0 }}
+            >
+              <ZoomOutMap fontSize="small" />
+            </IconButton>
+          </Paper>
         </Box>
       </Box>
 
