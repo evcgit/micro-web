@@ -37,7 +37,6 @@ const DrawingTool = () => {
   const [snapTimer, setSnapTimer] = useState(null);
   const [mode, setMode] = useState('draw'); // 'draw' or 'select'
   const [currentColor, setCurrentColor] = useState('#000000');
-  const [shapes, setShapes] = useState([]); // Store detected closed shapes
   const [selectedLineIndices, setSelectedLineIndices] = useState([]);
   const [isSelecting, setIsSelecting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -70,6 +69,36 @@ const DrawingTool = () => {
   const THUMBNAIL_SIZE = 100; // Size of thumbnail previews
   const TOOLBAR_WIDTH = 60; // Width of the left toolbar
   const TOP_BAR_HEIGHT = 48; // Height of the top bar
+
+  useEffect(() => {
+    const handleKeyDown = e => {
+			switch(e.key) {
+				case 'Escape':
+					setIsDrawing(false);
+					setIsDrawingShape(false);
+					setMode('select');
+					break;
+				case 'd':
+					setIsDraggingEndpoint(false);
+					setIsDragging(false);
+					setIsSelecting(false);
+					setIsDrawing(false);
+					setIsDrawingShape(false);
+					setSelectedLineIndices([]);
+					setMode('draw');
+					break;
+
+				default:
+					break;
+			}
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   const renderGrid = () => {
     const canvasWidth =
