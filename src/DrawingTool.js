@@ -2,28 +2,20 @@ import React, { useRef, useEffect, useState } from 'react';
 import { Stage, Layer, Line, Rect, Circle } from 'react-konva';
 import {
   Box,
-  Button,
-  Toolbar,
   Typography,
-  AppBar,
-  Container,
   IconButton,
   Tooltip,
-  ButtonGroup,
   Drawer,
   Paper,
   Divider,
   Grid,
   Popover,
-  Stack,
   Fab,
-  SpeedDial,
-  SpeedDialAction,
-  SpeedDialIcon
+  TextField
 } from '@mui/material';
 import {
   Clear,
-  Info,
+  RestartAlt,
   Edit,
   AdsClick,
   Save,
@@ -32,13 +24,11 @@ import {
   CropSquare,
   RadioButtonUnchecked,
   ChangeHistory,
-  Star,
   ArrowForward,
   Close,
   ZoomIn,
   ZoomOut,
-  ZoomOutMap,
-  Menu
+  ZoomOutMap
 } from '@mui/icons-material';
 
 const DrawingTool = () => {
@@ -64,14 +54,14 @@ const DrawingTool = () => {
   const [library, setLibrary] = useState([]);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [colorPickerAnchor, setColorPickerAnchor] = useState(null);
-  const [selectionPopoverAnchor, setSelectionPopoverAnchor] = useState(null);
   const [shapeMenuAnchor, setShapeMenuAnchor] = useState(null);
-  const [currentShape, setCurrentShape] = useState('line'); // 'line', 'rectangle', 'circle', 'triangle', 'arrow', 'star'
+  const [currentShape, setCurrentShape] = useState('line'); // 'line', 'rectangle', 'circle', 'triangle', 'arrow'
   const [isDrawingShape, setIsDrawingShape] = useState(false);
-  const [shapeStartPos, setShapeStartPos] = useState({ x: 0, y: 0 });
   const [tempShape, setTempShape] = useState(null);
   const [zoom, setZoom] = useState(1);
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
+  const [boardTitle, setBoardTitle] = useState(null);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
   const stageRef = useRef();
 
   const GRID_SIZE = 25; // Grid spacing in pixels
@@ -83,8 +73,7 @@ const DrawingTool = () => {
 
   const renderGrid = () => {
     const canvasWidth =
-      (window.innerWidth - TOOLBAR_WIDTH - (libraryOpen ? LIBRARY_WIDTH : 0)) /
-      zoom;
+      (window.innerWidth - (libraryOpen ? LIBRARY_WIDTH : 0)) / zoom;
     const height = (window.innerHeight - TOP_BAR_HEIGHT) / zoom;
     const gridLines = [];
 
@@ -171,7 +160,6 @@ const DrawingTool = () => {
       } else {
         // Drawing shapes
         setIsDrawingShape(true);
-        setShapeStartPos(adjustedPos);
         setTempShape({
           type: currentShape,
           startX: adjustedPos.x,
@@ -236,7 +224,6 @@ const DrawingTool = () => {
         // Clicking on empty space - start drag selection
         if (!e.evt.ctrlKey && !e.evt.metaKey) {
           setSelectedLineIndices([]);
-          setSelectionPopoverAnchor(null);
         }
         setIsSelecting(true);
         setSelectionStart(adjustedPos);
@@ -624,10 +611,6 @@ const DrawingTool = () => {
         if (newSelectedIndices.length > 1) {
           // Set popover position based on selection center
           const selectionCenter = calculateSelectionCenter(newSelectedIndices);
-          setSelectionPopoverAnchor({
-            clientX: selectionCenter.x,
-            clientY: selectionCenter.y
-          });
         }
       }
     }
@@ -717,7 +700,6 @@ const DrawingTool = () => {
     setIsDragging(false);
     setIsDraggingEndpoint(false);
     setDraggedEndpoint({ lineIndex: -1, pointIndex: -1 });
-    setSelectionPopoverAnchor(null);
     setShapeMenuAnchor(null);
     if (snapTimer) {
       clearTimeout(snapTimer);
@@ -879,30 +861,6 @@ const DrawingTool = () => {
           isSnapped: true
         };
 
-      case 'star':
-        // Create 5-pointed star
-        const starCenterX = (startX + endX) / 2;
-        const starCenterY = (startY + endY) / 2;
-        const outerRadius = Math.min(Math.abs(width), Math.abs(height)) / 2;
-        const innerRadius = outerRadius * 0.4;
-        const starPoints = [];
-
-        for (let i = 0; i < 10; i++) {
-          const angle = (i / 10) * Math.PI * 2 - Math.PI / 2;
-          const radius = i % 2 === 0 ? outerRadius : innerRadius;
-          const x = starCenterX + Math.cos(angle) * radius;
-          const y = starCenterY + Math.sin(angle) * radius;
-          starPoints.push(x, y);
-        }
-        starPoints.push(starPoints[0], starPoints[1]); // Close the shape
-
-        return {
-          points: starPoints,
-          stroke,
-          strokeWidth,
-          isSnapped: true
-        };
-
       default:
         return null;
     }
@@ -933,8 +891,6 @@ const DrawingTool = () => {
         return <ChangeHistory />;
       case 'arrow':
         return <ArrowForward />;
-      case 'star':
-        return <Star />;
       default:
         return <Edit />;
     }
@@ -952,8 +908,6 @@ const DrawingTool = () => {
         return 'Triangle';
       case 'arrow':
         return 'Arrow';
-      case 'star':
-        return 'Star';
       default:
         return 'Free Draw';
     }
@@ -1115,6 +1069,23 @@ const DrawingTool = () => {
     setStagePos(newPos);
   };
 
+  const handleTitleEdit = () => {
+    setIsEditingTitle(true);
+  };
+
+  const handleTitleSave = newTitle => {
+    setBoardTitle(newTitle.trim() || 'Untitled Board');
+    setIsEditingTitle(false);
+  };
+
+  const handleTitleKeyDown = e => {
+    if (e.key === 'Enter') {
+      handleTitleSave(e.target.value);
+    } else if (e.key === 'Escape') {
+      setIsEditingTitle(false);
+    }
+  };
+
   return (
     <Box
       sx={{
@@ -1128,36 +1099,83 @@ const DrawingTool = () => {
       <Box
         sx={{
           position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
+          top: 16,
+          left: '10%',
+          transform: 'translateX(-50%)',
           height: TOP_BAR_HEIGHT,
           bgcolor: 'white',
-          borderBottom: '1px solid #e0e0e0',
+          borderRadius: '12px',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
           display: 'flex',
           alignItems: 'center',
           px: 2,
-          zIndex: 1300
+          zIndex: 1300,
+          minWidth: 300,
+          maxWidth: 500
         }}
       >
         <IconButton size="small" sx={{ mr: 1 }}>
           <Close />
         </IconButton>
-        <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 500 }}>
-          Untitled Board
-        </Typography>
+
+        {isEditingTitle ? (
+          <TextField
+            autoFocus
+            variant="standard"
+            placeholder="Untitled Board"
+            value={boardTitle}
+            onChange={e => setBoardTitle(e.target.value)}
+            onBlur={e => handleTitleSave(e.target.value)}
+            onKeyDown={handleTitleKeyDown}
+            sx={{
+              flexGrow: 1,
+              '& .MuiInput-underline:before': { borderBottom: 'none' },
+              '& .MuiInput-underline:after': {
+                borderBottom: '2px solid #1976d2'
+              },
+              '& .MuiInput-underline:hover:not(.Mui-disabled):before': {
+                borderBottom: 'none'
+              },
+              '& .MuiInputBase-input': {
+                fontSize: '1.25rem',
+                fontWeight: 500,
+                textAlign: 'center',
+                padding: '4px 8px'
+              }
+            }}
+          />
+        ) : (
+          <Typography
+            variant="h6"
+            sx={{
+              flexGrow: 1,
+              fontWeight: 500,
+              textAlign: 'center',
+              cursor: 'pointer',
+              px: 1,
+              py: 0.5,
+              borderRadius: '4px',
+              '&:hover': {
+                bgcolor: 'rgba(0, 0, 0, 0.04)'
+              }
+            }}
+            onClick={handleTitleEdit}
+          >
+            {boardTitle || 'Untitled Board'}
+          </Typography>
+        )}
       </Box>
 
       {/* Left Toolbar */}
       <Box
         sx={{
           position: 'fixed',
-          left: 0,
-          top: TOP_BAR_HEIGHT,
-          bottom: 0,
+          left: 16,
+          top: TOP_BAR_HEIGHT + 32,
           width: TOOLBAR_WIDTH,
           bgcolor: 'white',
-          borderRight: '1px solid #e0e0e0',
+          borderRadius: '12px',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
@@ -1217,7 +1235,7 @@ const DrawingTool = () => {
 
         <Tooltip title="Clear Canvas" placement="right">
           <IconButton onClick={clearCanvas} sx={{ width: 40, height: 40 }}>
-            <Clear />
+            <RestartAlt />
           </IconButton>
         </Tooltip>
 
@@ -1251,30 +1269,34 @@ const DrawingTool = () => {
             horizontal: 'left'
           }}
         >
-          <Box sx={{ p: 1, minWidth: 150 }}>
-            <Typography
-              variant="subtitle2"
-              sx={{ px: 1, py: 0.5, color: 'text.secondary' }}
-            >
-              Select Shape
-            </Typography>
-            {['line', 'rectangle', 'circle', 'triangle', 'arrow', 'star'].map(
+          <Box sx={{ py: 0.5, minWidth: 'auto' }}>
+            {['line', 'rectangle', 'circle', 'triangle', 'arrow'].map(
               shape => (
-                <Button
+                <IconButton
                   key={shape}
-                  startIcon={getShapeIcon(shape)}
                   onClick={() => selectShape(shape)}
-                  fullWidth
-                  variant={currentShape === shape ? 'contained' : 'text'}
                   size="small"
                   sx={{
-                    justifyContent: 'flex-start',
-                    mb: 0.5,
-                    textTransform: 'none'
+                    width: 36,
+                    height: 36,
+                    mx: 0.25,
+                    bgcolor:
+                      currentShape === shape ? 'primary.light' : 'transparent',
+                    color:
+                      currentShape === shape
+                        ? 'primary.main'
+                        : 'text.secondary',
+                    '&:hover': {
+                      bgcolor:
+                        currentShape === shape
+                          ? 'primary.light'
+                          : 'action.hover'
+                    }
                   }}
+                  title={getShapeName(shape)}
                 >
-                  {getShapeName(shape)}
-                </Button>
+                  {getShapeIcon(shape)}
+                </IconButton>
               )
             )}
           </Box>
@@ -1296,10 +1318,10 @@ const DrawingTool = () => {
         >
           <Box
             sx={{
-              p: 2,
+              p: 1,
               display: 'grid',
               gridTemplateColumns: 'repeat(4, 1fr)',
-              gap: 1
+              gap: 0.75
             }}
           >
             {[
@@ -1316,15 +1338,24 @@ const DrawingTool = () => {
                 key={color}
                 onClick={() => selectColor(color)}
                 sx={{
-                  width: 24,
-                  height: 24,
+                  width: 20,
+                  height: 20,
                   bgcolor: color,
                   cursor: 'pointer',
-                  borderRadius: '4px',
+                  borderRadius: '50%',
                   border:
                     currentColor === color
-                      ? '2px solid #000'
-                      : '1px solid #e0e0e0'
+                      ? '2px solid #1976d2'
+                      : '1px solid rgba(0,0,0,0.1)',
+                  boxShadow:
+                    currentColor === color
+                      ? '0 0 0 2px rgba(25, 118, 210, 0.2)'
+                      : 'none',
+                  '&:hover': {
+                    transform: 'scale(1.1)',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                  },
+                  transition: 'all 0.15s ease'
                 }}
               />
             ))}
@@ -1336,18 +1367,13 @@ const DrawingTool = () => {
       <Box
         sx={{
           flex: 1,
-          ml: `${TOOLBAR_WIDTH}px`,
           mt: `${TOP_BAR_HEIGHT}px`,
           position: 'relative',
           overflow: 'hidden'
         }}
       >
         <Stage
-          width={
-            window.innerWidth -
-            TOOLBAR_WIDTH -
-            (libraryOpen ? LIBRARY_WIDTH : 0)
-          }
+          width={window.innerWidth - (libraryOpen ? LIBRARY_WIDTH : 0)}
           height={window.innerHeight - TOP_BAR_HEIGHT}
           onMouseDown={handleMouseDown}
           onMousemove={handleMouseMove}
