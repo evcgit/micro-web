@@ -14,10 +14,8 @@ import {
   TextField
 } from '@mui/material';
 import {
-  Clear,
   RestartAlt,
   Edit,
-  AdsClick,
   Save,
   LibraryBooks,
   ArrowDropDown,
@@ -28,7 +26,10 @@ import {
   Close,
   ZoomIn,
   ZoomOut,
-  ZoomOutMap
+  ZoomOutMap,
+	LinearScale,
+	HighlightAlt,
+	PanToolIcon
 } from '@mui/icons-material';
 
 const DrawingTool = () => {
@@ -54,13 +55,15 @@ const DrawingTool = () => {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [colorPickerAnchor, setColorPickerAnchor] = useState(null);
   const [shapeMenuAnchor, setShapeMenuAnchor] = useState(null);
-  const [currentShape, setCurrentShape] = useState('line'); // 'line', 'rectangle', 'circle', 'triangle', 'arrow'
+  const [currentShape, setCurrentShape] = useState('line'); // 'line', 'rectangle', 'circle', 'triangle', 'arrow', 'two-point-line'
   const [isDrawingShape, setIsDrawingShape] = useState(false);
   const [tempShape, setTempShape] = useState(null);
   const [zoom, setZoom] = useState(1);
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const [boardTitle, setBoardTitle] = useState(null);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [twoPointLineStart, setTwoPointLineStart] = useState(null);
+  const [twoPointLinePreview, setTwoPointLinePreview] = useState(null);
   const stageRef = useRef();
 
   const GRID_SIZE = 25; // Grid spacing in pixels (1 foot = 25 pixels)
@@ -186,6 +189,27 @@ const DrawingTool = () => {
             isSnapped: false
           }
         ]);
+      } else if (currentShape === 'two-point-line') {
+        if (!twoPointLineStart) {
+          // First click - set starting point
+          setTwoPointLineStart(adjustedPos);
+        } else {
+          // Second click - create line from start to end point
+          const newLine = {
+            points: [
+              twoPointLineStart.x,
+              twoPointLineStart.y,
+              adjustedPos.x,
+              adjustedPos.y
+            ],
+            stroke: currentColor,
+            strokeWidth: 4,
+            isSnapped: true
+          };
+          setLines([...lines, newLine]);
+          setTwoPointLineStart(null);
+          setTwoPointLinePreview(null);
+        }
       } else {
         // Drawing shapes
         setIsDrawingShape(true);
@@ -437,7 +461,30 @@ const DrawingTool = () => {
       return;
     }
 
-    if (mode === 'draw' && isDrawing && currentShape === 'line') {
+    if (
+      mode === 'draw' &&
+      currentShape === 'two-point-line' &&
+      twoPointLineStart
+    ) {
+      // Update two-point line preview
+      const stage = e.target.getStage();
+      const point = stage.getPointerPosition();
+      const adjustedPoint = {
+        x: (point.x - stagePos.x) / zoom,
+        y: (point.y - stagePos.y) / zoom
+      };
+
+      setTwoPointLinePreview({
+        points: [
+          twoPointLineStart.x,
+          twoPointLineStart.y,
+          adjustedPoint.x,
+          adjustedPoint.y
+        ],
+        stroke: currentColor,
+        strokeWidth: 4
+      });
+    } else if (mode === 'draw' && isDrawing && currentShape === 'line') {
       // Clear existing snap timer
       if (snapTimer) {
         clearTimeout(snapTimer);
@@ -469,7 +516,7 @@ const DrawingTool = () => {
       // Set new snap timer - if user stops moving for 500ms, snap to straight line
       const newTimer = setTimeout(() => {
         snapToStraightLine();
-      }, 750);
+      }, 1000);
 
       setSnapTimer(newTimer);
     } else if (mode === 'draw' && isDrawingShape && tempShape) {
@@ -730,6 +777,8 @@ const DrawingTool = () => {
     setIsDraggingEndpoint(false);
     setDraggedEndpoint({ lineIndex: -1, pointIndex: -1 });
     setShapeMenuAnchor(null);
+    setTwoPointLineStart(null);
+    setTwoPointLinePreview(null);
     if (snapTimer) {
       clearTimeout(snapTimer);
       setSnapTimer(null);
@@ -912,6 +961,8 @@ const DrawingTool = () => {
     switch (shape) {
       case 'line':
         return <Edit />;
+      case 'two-point-line':
+        return <LinearScale />;
       case 'rectangle':
         return <CropSquare />;
       case 'circle':
@@ -929,6 +980,8 @@ const DrawingTool = () => {
     switch (shape) {
       case 'line':
         return 'Free Draw';
+      case 'two-point-line':
+        return 'Two-Point Line';
       case 'rectangle':
         return 'Rectangle';
       case 'circle':
@@ -1178,7 +1231,7 @@ const DrawingTool = () => {
   };
 
   const renderMeasurements = () => {
-    return lines.map((line, index) => {
+    const measurements = lines.map((line, index) => {
       const length = calculateLineLength(line.points);
       if (length === 0) return null;
 
@@ -1207,6 +1260,41 @@ const DrawingTool = () => {
         />
       );
     });
+
+    // Add preview measurement for two-point line
+    if (twoPointLinePreview) {
+      const length = calculateLineLength(twoPointLinePreview.points);
+      if (length > 0) {
+        const { x, y, angle } = getLineMidpointAndAngle(
+          twoPointLinePreview.points
+        );
+        const measurement = formatMeasurement(length);
+
+        // Offset text slightly above the line
+        const offsetY = -15 / zoom;
+
+        measurements.push(
+          <Text
+            key="preview-measurement"
+            x={x}
+            y={y + offsetY}
+            text={measurement}
+            fontSize={12 / zoom}
+            fontFamily="Arial, sans-serif"
+            fill="#666"
+            align="center"
+            offsetX={0}
+            offsetY={6 / zoom}
+            rotation={angle}
+            opacity={0.8}
+            strokeWidth={3 / zoom}
+            paintOrder="stroke fill"
+          />
+        );
+      }
+    }
+
+    return measurements;
   };
 
   return (
@@ -1320,7 +1408,7 @@ const DrawingTool = () => {
               }
             }}
           >
-            <AdsClick />
+            <HighlightAlt />
           </IconButton>
         </Tooltip>
 
@@ -1393,7 +1481,14 @@ const DrawingTool = () => {
           }}
         >
           <Box sx={{ py: 0.5, minWidth: 'auto' }}>
-            {['line', 'rectangle', 'circle', 'triangle', 'arrow'].map(shape => (
+            {[
+              'line',
+              'two-point-line',
+              'rectangle',
+              'circle',
+              'triangle',
+              'arrow'
+            ].map(shape => (
               <IconButton
                 key={shape}
                 onClick={() => selectShape(shape)}
@@ -1537,6 +1632,31 @@ const DrawingTool = () => {
                 strokeWidth={tempShape.strokeWidth / zoom}
                 dash={[5, 5]}
                 opacity={0.7}
+              />
+            )}
+
+            {/* Two-point line preview */}
+            {twoPointLinePreview && (
+              <Line
+                points={twoPointLinePreview.points}
+                stroke={twoPointLinePreview.stroke}
+                strokeWidth={twoPointLinePreview.strokeWidth / zoom}
+                dash={[5, 5]}
+                opacity={0.6}
+                lineCap="round"
+                lineJoin="round"
+              />
+            )}
+
+            {/* Two-point line start point indicator */}
+            {twoPointLineStart && (
+              <Circle
+                x={twoPointLineStart.x}
+                y={twoPointLineStart.y}
+                radius={4 / zoom}
+                fill={currentColor}
+                stroke="white"
+                strokeWidth={2 / zoom}
               />
             )}
 
