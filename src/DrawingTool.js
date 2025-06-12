@@ -27,16 +27,16 @@ import {
   ZoomIn,
   ZoomOut,
   ZoomOutMap,
-	LinearScale,
-	HighlightAlt,
-	PanToolIcon
+  LinearScale,
+  HighlightAlt,
+  PanTool
 } from '@mui/icons-material';
 
 const DrawingTool = () => {
   const [lines, setLines] = useState([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [snapTimer, setSnapTimer] = useState(null);
-  const [mode, setMode] = useState('draw'); // 'draw' or 'select'
+  const [mode, setMode] = useState('draw'); // 'draw', 'select', or 'pan'
   const [currentColor, setCurrentColor] = useState('#000000');
   const [selectedLineIndices, setSelectedLineIndices] = useState([]);
   const [isSelecting, setIsSelecting] = useState(false);
@@ -64,6 +64,9 @@ const DrawingTool = () => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [twoPointLineStart, setTwoPointLineStart] = useState(null);
   const [twoPointLinePreview, setTwoPointLinePreview] = useState(null);
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStartPos, setPanStartPos] = useState({ x: 0, y: 0 });
+  const [panStartStagePos, setPanStartStagePos] = useState({ x: 0, y: 0 });
   const stageRef = useRef();
 
   const GRID_SIZE = 25; // Grid spacing in pixels (1 foot = 25 pixels)
@@ -104,9 +107,8 @@ const DrawingTool = () => {
   }, []);
 
   const renderGrid = () => {
-    const canvasWidth =
-      (window.innerWidth - (libraryOpen ? LIBRARY_WIDTH : 0)) / zoom;
-    const height = (window.innerHeight - TOP_BAR_HEIGHT) / zoom;
+    const canvasWidth = window.innerWidth / zoom;
+    const height = window.innerHeight / zoom;
     const gridLines = [];
 
     // Calculate grid offset based on stage position
@@ -171,7 +173,13 @@ const DrawingTool = () => {
   };
 
   const handleMouseDown = e => {
-    if (mode === 'draw') {
+    if (mode === 'pan') {
+      // Start panning
+      setIsPanning(true);
+      const pos = e.target.getStage().getPointerPosition();
+      setPanStartPos(pos);
+      setPanStartStagePos({ ...stagePos });
+    } else if (mode === 'draw') {
       const pos = e.target.getStage().getPointerPosition();
       const adjustedPos = {
         x: (pos.x - stagePos.x) / zoom,
@@ -461,7 +469,18 @@ const DrawingTool = () => {
       return;
     }
 
-    if (
+    if (mode === 'pan' && isPanning) {
+      // Handle canvas panning
+      const stage = e.target.getStage();
+      const pos = stage.getPointerPosition();
+      const deltaX = pos.x - panStartPos.x;
+      const deltaY = pos.y - panStartPos.y;
+
+      setStagePos({
+        x: panStartStagePos.x + deltaX,
+        y: panStartStagePos.y + deltaY
+      });
+    } else if (
       mode === 'draw' &&
       currentShape === 'two-point-line' &&
       twoPointLineStart
@@ -608,7 +627,12 @@ const DrawingTool = () => {
   };
 
   const handleMouseUp = e => {
-    if (isDraggingFromLibrary && draggedDrawing) {
+    if (mode === 'pan' && isPanning) {
+      // Stop panning
+      setIsPanning(false);
+      setPanStartPos({ x: 0, y: 0 });
+      setPanStartStagePos({ x: 0, y: 0 });
+    } else if (isDraggingFromLibrary && draggedDrawing) {
       // Drop the library drawing into the canvas
       const stage = e.target.getStage();
       const dropPos = stage.getPointerPosition();
@@ -779,6 +803,9 @@ const DrawingTool = () => {
     setShapeMenuAnchor(null);
     setTwoPointLineStart(null);
     setTwoPointLinePreview(null);
+    setIsPanning(false);
+    setPanStartPos({ x: 0, y: 0 });
+    setPanStartStagePos({ x: 0, y: 0 });
     if (snapTimer) {
       clearTimeout(snapTimer);
       setSnapTimer(null);
@@ -1014,6 +1041,10 @@ const DrawingTool = () => {
     if (mode === 'select') {
       if (isDragging || isDraggingEndpoint) return 'grabbing';
       return 'default';
+    }
+    if (mode === 'pan') {
+      if (isPanning) return 'grabbing';
+      return 'grab';
     }
     return 'default';
   };
@@ -1412,6 +1443,23 @@ const DrawingTool = () => {
           </IconButton>
         </Tooltip>
 
+        <Tooltip title="Pan Canvas" placement="right">
+          <IconButton
+            onClick={() => setModeAndReset('pan')}
+            color={mode === 'pan' ? 'primary' : 'default'}
+            sx={{
+              width: 40,
+              height: 40,
+              bgcolor: mode === 'pan' ? 'primary.light' : 'transparent',
+              '&:hover': {
+                bgcolor: mode === 'pan' ? 'primary.light' : 'action.hover'
+              }
+            }}
+          >
+            <PanTool />
+          </IconButton>
+        </Tooltip>
+
         <Tooltip
           title={`Draw - ${getShapeName(currentShape)}`}
           placement="right"
@@ -1579,7 +1627,6 @@ const DrawingTool = () => {
       <Box
         sx={{
           flex: 1,
-          mt: `${TOP_BAR_HEIGHT}px`,
           position: 'relative',
           overflow: 'hidden'
         }}
@@ -1767,20 +1814,18 @@ const DrawingTool = () => {
       </Box>
 
       {/* Library Sidebar */}
-      <Drawer
-        anchor="right"
-        variant="persistent"
-        open={libraryOpen}
+      <Box
         sx={{
+          position: 'fixed',
+          right: libraryOpen ? 0 : -LIBRARY_WIDTH,
           width: LIBRARY_WIDTH,
-          flexShrink: 0,
-          '& .MuiDrawer-paper': {
-            width: LIBRARY_WIDTH,
-            boxSizing: 'border-box',
-            top: TOP_BAR_HEIGHT,
-            height: `calc(100vh - ${TOP_BAR_HEIGHT}px)`,
-            bgcolor: '#fafafa'
-          }
+          height: '100vh',
+          bgcolor: '#fafafa',
+          boxShadow: libraryOpen ? '0 0 20px rgba(0,0,0,0.15)' : 'none',
+          transition: 'right 0.3s ease-in-out',
+          zIndex: 1200,
+          overflow: 'auto',
+          borderLeft: libraryOpen ? '1px solid #e0e0e0' : 'none'
         }}
       >
         <Box sx={{ p: 2 }}>
@@ -1843,7 +1888,7 @@ const DrawingTool = () => {
             </Box>
           )}
         </Box>
-      </Drawer>
+      </Box>
     </Box>
   );
 };
