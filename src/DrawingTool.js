@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Stage, Layer, Line, Rect, Circle } from 'react-konva';
+import { Stage, Layer, Line, Rect, Circle, Text } from 'react-konva';
 import {
   Box,
   Typography,
@@ -63,7 +63,7 @@ const DrawingTool = () => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const stageRef = useRef();
 
-  const GRID_SIZE = 25; // Grid spacing in pixels
+  const GRID_SIZE = 25; // Grid spacing in pixels (1 foot = 25 pixels)
   const ENDPOINT_RADIUS = 6; // Radius of endpoint circles
   const LIBRARY_WIDTH = 280; // Width of the library sidebar
   const THUMBNAIL_SIZE = 100; // Size of thumbnail previews
@@ -72,25 +72,25 @@ const DrawingTool = () => {
 
   useEffect(() => {
     const handleKeyDown = e => {
-			switch(e.key) {
-				case 'Escape':
-					setIsDrawing(false);
-					setIsDrawingShape(false);
-					setMode('select');
-					break;
-				case 'd':
-					setIsDraggingEndpoint(false);
-					setIsDragging(false);
-					setIsSelecting(false);
-					setIsDrawing(false);
-					setIsDrawingShape(false);
-					setSelectedLineIndices([]);
-					setMode('draw');
-					break;
+      switch (e.key) {
+        case 'Escape':
+          setIsDrawing(false);
+          setIsDrawingShape(false);
+          setMode('select');
+          break;
+        case 'd':
+          setIsDraggingEndpoint(false);
+          setIsDragging(false);
+          setIsSelecting(false);
+          setIsDrawing(false);
+          setIsDrawingShape(false);
+          setSelectedLineIndices([]);
+          setMode('draw');
+          break;
 
-				default:
-					break;
-			}
+        default:
+          break;
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -1115,6 +1115,100 @@ const DrawingTool = () => {
     }
   };
 
+  const calculateLineLength = points => {
+    if (points.length < 4) return 0;
+
+    let totalLength = 0;
+    for (let i = 0; i < points.length - 2; i += 2) {
+      const x1 = points[i];
+      const y1 = points[i + 1];
+      const x2 = points[i + 2];
+      const y2 = points[i + 3];
+
+      const segmentLength = Math.sqrt(
+        Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2)
+      );
+      totalLength += segmentLength;
+    }
+
+    // Convert pixels to feet (GRID_SIZE pixels = 1 foot)
+    return totalLength / GRID_SIZE;
+  };
+
+  const getLineMidpointAndAngle = points => {
+    if (points.length < 4) return { x: 0, y: 0, angle: 0 };
+
+    // For multi-segment lines, find the overall midpoint
+    const startX = points[0];
+    const startY = points[1];
+    const endX = points[points.length - 2];
+    const endY = points[points.length - 1];
+
+    const midX = (startX + endX) / 2;
+    const midY = (startY + endY) / 2;
+
+    // Calculate angle for text rotation
+    const deltaX = endX - startX;
+    const deltaY = endY - startY;
+    let angle = Math.atan2(deltaY, deltaX) * (180 / Math.PI);
+
+    // Keep text readable by limiting rotation
+    if (angle > 90) angle -= 180;
+    if (angle < -90) angle += 180;
+
+    return { x: midX, y: midY, angle };
+  };
+
+  const formatMeasurement = lengthInFeet => {
+    if (lengthInFeet < 1) {
+      // Show in inches for lengths less than 1 foot
+      const inches = Math.round(lengthInFeet * 12);
+      return `${inches}"`;
+    } else {
+      // Show feet and inches
+      const feet = Math.floor(lengthInFeet);
+      const inches = Math.round((lengthInFeet - feet) * 12);
+
+      if (inches === 0) {
+        return `${feet}'`;
+      } else {
+        return `${feet}' ${inches}"`;
+      }
+    }
+  };
+
+  const renderMeasurements = () => {
+    return lines.map((line, index) => {
+      const length = calculateLineLength(line.points);
+      if (length === 0) return null;
+
+      const { x, y, angle } = getLineMidpointAndAngle(line.points);
+      const measurement = formatMeasurement(length);
+
+      // Offset text slightly above the line
+      const offsetY = -15 / zoom; // Adjust offset based on zoom
+
+      return (
+        <Text
+          key={`measurement-${index}`}
+          x={x}
+          y={y + offsetY}
+          text={measurement}
+          fontSize={12 / zoom} // Scale font size with zoom
+          fontFamily="Arial, sans-serif"
+          fill="#333"
+          align="center"
+          offsetX={0} // Will be set based on text width
+          offsetY={6 / zoom} // Center vertically
+          rotation={angle}
+          // stroke="white"
+          strokeWidth={3 / zoom}
+          paintOrder="stroke fill" // Draw stroke behind fill for better readability
+        />
+      );
+    });
+  };
+
   return (
     <Box
       sx={{
@@ -1299,35 +1393,29 @@ const DrawingTool = () => {
           }}
         >
           <Box sx={{ py: 0.5, minWidth: 'auto' }}>
-            {['line', 'rectangle', 'circle', 'triangle', 'arrow'].map(
-              shape => (
-                <IconButton
-                  key={shape}
-                  onClick={() => selectShape(shape)}
-                  size="small"
-                  sx={{
-                    width: 36,
-                    height: 36,
-                    mx: 0.25,
+            {['line', 'rectangle', 'circle', 'triangle', 'arrow'].map(shape => (
+              <IconButton
+                key={shape}
+                onClick={() => selectShape(shape)}
+                size="small"
+                sx={{
+                  width: 36,
+                  height: 36,
+                  mx: 0.25,
+                  bgcolor:
+                    currentShape === shape ? 'primary.light' : 'transparent',
+                  color:
+                    currentShape === shape ? 'primary.main' : 'text.secondary',
+                  '&:hover': {
                     bgcolor:
-                      currentShape === shape ? 'primary.light' : 'transparent',
-                    color:
-                      currentShape === shape
-                        ? 'primary.main'
-                        : 'text.secondary',
-                    '&:hover': {
-                      bgcolor:
-                        currentShape === shape
-                          ? 'primary.light'
-                          : 'action.hover'
-                    }
-                  }}
-                  title={getShapeName(shape)}
-                >
-                  {getShapeIcon(shape)}
-                </IconButton>
-              )
-            )}
+                      currentShape === shape ? 'primary.light' : 'action.hover'
+                  }
+                }}
+                title={getShapeName(shape)}
+              >
+                {getShapeIcon(shape)}
+              </IconButton>
+            ))}
           </Box>
         </Popover>
 
@@ -1437,6 +1525,9 @@ const DrawingTool = () => {
                 />
               );
             })}
+
+            {/* Measurements */}
+            {renderMeasurements()}
 
             {/* Temporary shape while drawing */}
             {tempShape && (
