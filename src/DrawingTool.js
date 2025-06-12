@@ -120,7 +120,7 @@ const DrawingTool = () => {
           points={[x, startY, x, endY]}
           stroke="#e0e0e0"
           strokeWidth={0.5 / zoom}
-          opacity={0.5}
+          opacity={0.85}
         />
       );
     }
@@ -133,7 +133,7 @@ const DrawingTool = () => {
           points={[startX, y, endX, y]}
           stroke="#e0e0e0"
           strokeWidth={0.5 / zoom}
-          opacity={0.5}
+          opacity={0.85}
         />
       );
     }
