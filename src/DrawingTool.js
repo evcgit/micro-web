@@ -663,9 +663,10 @@ const DrawingTool = () => {
     if (mode === 'draw') {
       if (isDrawingShape && tempShape) {
         // Finalize the shape and add it to lines
-        const newShape = createShapePoints(tempShape);
-        if (newShape) {
-          setLines([...lines, newShape]);
+        const newShapeLines = createShapePoints(tempShape);
+        if (newShapeLines) {
+          // Add all the shape lines to the canvas
+          setLines([...lines, ...newShapeLines]);
         }
         setIsDrawingShape(false);
         setTempShape(null);
@@ -883,88 +884,114 @@ const DrawingTool = () => {
 
     switch (type) {
       case 'rectangle':
-        return {
-          points: [
-            startX,
-            startY,
-            endX,
-            startY,
-            endX,
-            endY,
-            startX,
-            endY,
-            startX,
-            startY
-          ],
-          stroke,
-          strokeWidth,
-          isSnapped: true
-        };
+        // Return array of 4 separate lines for each side
+        return [
+          {
+            points: [startX, startY, endX, startY], // Top
+            stroke,
+            strokeWidth,
+            isSnapped: true
+          },
+          {
+            points: [endX, startY, endX, endY], // Right
+            stroke,
+            strokeWidth,
+            isSnapped: true
+          },
+          {
+            points: [endX, endY, startX, endY], // Bottom
+            stroke,
+            strokeWidth,
+            isSnapped: true
+          },
+          {
+            points: [startX, endY, startX, startY], // Left
+            stroke,
+            strokeWidth,
+            isSnapped: true
+          }
+        ];
 
       case 'circle':
-        // Create circle using multiple points
+        // Create circle using multiple connected segments
         const centerX = (startX + endX) / 2;
         const centerY = (startY + endY) / 2;
         const radiusX = Math.abs(width) / 2;
         const radiusY = Math.abs(height) / 2;
-        const points = [];
-        const segments = 32;
+        const segments = 16; // Use fewer segments, each as a separate line
+        const circleLines = [];
 
-        for (let i = 0; i <= segments; i++) {
-          const angle = (i / segments) * Math.PI * 2;
-          const x = centerX + Math.cos(angle) * radiusX;
-          const y = centerY + Math.sin(angle) * radiusY;
-          points.push(x, y);
+        for (let i = 0; i < segments; i++) {
+          const angle1 = (i / segments) * Math.PI * 2;
+          const angle2 = ((i + 1) / segments) * Math.PI * 2;
+          const x1 = centerX + Math.cos(angle1) * radiusX;
+          const y1 = centerY + Math.sin(angle1) * radiusY;
+          const x2 = centerX + Math.cos(angle2) * radiusX;
+          const y2 = centerY + Math.sin(angle2) * radiusY;
+
+          circleLines.push({
+            points: [x1, y1, x2, y2],
+            stroke,
+            strokeWidth,
+            isSnapped: true
+          });
         }
 
-        return {
-          points,
-          stroke,
-          strokeWidth,
-          isSnapped: true
-        };
+        return circleLines;
 
       case 'triangle':
-        // Create triangle with top point and bottom base
-        const topX = (startX + endX) / 2;
-        const topY = Math.min(startY, endY);
-        const bottomY = Math.max(startY, endY);
+        // Create triangle with 3 separate lines
+        const triTopX = (startX + endX) / 2;
+        const triTopY = Math.min(startY, endY);
+        const triBottomY = Math.max(startY, endY);
 
-        return {
-          points: [topX, topY, startX, bottomY, endX, bottomY, topX, topY],
-          stroke,
-          strokeWidth,
-          isSnapped: true
-        };
+        return [
+          {
+            points: [triTopX, triTopY, startX, triBottomY], // Left side
+            stroke,
+            strokeWidth,
+            isSnapped: true
+          },
+          {
+            points: [startX, triBottomY, endX, triBottomY], // Bottom
+            stroke,
+            strokeWidth,
+            isSnapped: true
+          },
+          {
+            points: [endX, triBottomY, triTopX, triTopY], // Right side
+            stroke,
+            strokeWidth,
+            isSnapped: true
+          }
+        ];
 
       case 'arrow':
-        // Create simple arrow shape
+        // Create arrow with separate lines for body and head
         const headSize = Math.min(Math.abs(width), Math.abs(height)) * 0.3;
         const bodyEndX = endX - (width > 0 ? headSize : -headSize);
+        const arrowCenterY = (startY + endY) / 2;
 
-        return {
-          points: [
-            startX,
-            startY,
-            bodyEndX,
-            startY,
-            bodyEndX,
-            startY - headSize / 2,
-            endX,
-            (startY + endY) / 2,
-            bodyEndX,
-            endY + headSize / 2,
-            bodyEndX,
-            endY,
-            startX,
-            endY,
-            startX,
-            startY
-          ],
-          stroke,
-          strokeWidth,
-          isSnapped: true
-        };
+        return [
+          {
+            points: [startX, arrowCenterY, bodyEndX, arrowCenterY], // Body
+            stroke,
+            strokeWidth,
+            isSnapped: true
+          },
+          {
+            points: [bodyEndX, arrowCenterY - headSize / 2, endX, arrowCenterY], // Upper arrow head
+            stroke,
+            strokeWidth,
+            isSnapped: true
+          },
+          {
+            points: [endX, arrowCenterY, bodyEndX, arrowCenterY + headSize / 2], // Lower arrow head
+            stroke,
+            strokeWidth,
+            isSnapped: true
+          }
+        ];
 
       default:
         return null;
@@ -1673,13 +1700,18 @@ const DrawingTool = () => {
 
             {/* Temporary shape while drawing */}
             {tempShape && (
-              <Line
-                points={createShapePoints(tempShape)?.points || []}
-                stroke={tempShape.stroke}
-                strokeWidth={tempShape.strokeWidth / zoom}
-                dash={[5, 5]}
-                opacity={0.7}
-              />
+              <>
+                {createShapePoints(tempShape)?.map((shapeLine, index) => (
+                  <Line
+                    key={`temp-shape-${index}`}
+                    points={shapeLine.points}
+                    stroke={shapeLine.stroke}
+                    strokeWidth={shapeLine.strokeWidth / zoom}
+                    dash={[5, 5]}
+                    opacity={0.7}
+                  />
+                ))}
+              </>
             )}
 
             {/* Two-point line preview */}
