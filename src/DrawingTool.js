@@ -1296,13 +1296,16 @@ const DrawingTool = () => {
       const { x, y, angle } = getLineMidpointAndAngle(line.points);
       const measurement = formatMeasurement(length);
 
-      // Offset text slightly above the line
-      const offsetY = -15 / zoom; // Adjust offset based on zoom
+      // Calculate perpendicular offset based on line angle
+      const offsetDistance = 15 / zoom;
+      const perpAngle = (angle + 90) * (Math.PI / 180); // Perpendicular to line
+      const offsetX = Math.cos(perpAngle) * offsetDistance;
+      const offsetY = Math.sin(perpAngle) * offsetDistance;
 
       return (
         <Text
           key={`measurement-${index}`}
-          x={x}
+          x={x + offsetX}
           y={y + offsetY}
           text={measurement}
           fontSize={12 / zoom} // Scale font size with zoom
@@ -1328,13 +1331,16 @@ const DrawingTool = () => {
         );
         const measurement = formatMeasurement(length);
 
-        // Offset text slightly above the line
-        const offsetY = -15 / zoom;
+        // Calculate perpendicular offset for preview
+        const offsetDistance = 15 / zoom;
+        const perpAngle = (angle + 90) * (Math.PI / 180);
+        const offsetX = Math.cos(perpAngle) * offsetDistance;
+        const offsetY = Math.sin(perpAngle) * offsetDistance;
 
         measurements.push(
           <Text
             key="preview-measurement"
-            x={x}
+            x={x + offsetX}
             y={y + offsetY}
             text={measurement}
             fontSize={12 / zoom}
