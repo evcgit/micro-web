@@ -15,7 +15,11 @@ import {
   Divider,
   Grid,
   Popover,
-  Stack
+  Stack,
+  Fab,
+  SpeedDial,
+  SpeedDialAction,
+  SpeedDialIcon
 } from '@mui/material';
 import {
   Clear,
@@ -24,23 +28,27 @@ import {
   AdsClick,
   Save,
   LibraryBooks,
-  Palette,
-  FormatColorFill,
-  AutoFixHigh,
-  Layers
+  ArrowDropDown,
+  CropSquare,
+  RadioButtonUnchecked,
+  ChangeHistory,
+  Star,
+  ArrowForward,
+  Close,
+  ZoomIn,
+  ZoomOut,
+  ZoomOutMap,
+  Menu
 } from '@mui/icons-material';
 
 const DrawingTool = () => {
   const [lines, setLines] = useState([]);
-  const [fills, setFills] = useState([]); // Store filled areas
   const [isDrawing, setIsDrawing] = useState(false);
   const [snapTimer, setSnapTimer] = useState(null);
-  const [mode, setMode] = useState('draw'); // 'draw', 'select', or 'fill'
+  const [mode, setMode] = useState('draw'); // 'draw' or 'select'
   const [currentColor, setCurrentColor] = useState('#000000');
-  const [currentFillColor, setCurrentFillColor] = useState('#ff0000');
   const [shapes, setShapes] = useState([]); // Store detected closed shapes
   const [selectedLineIndices, setSelectedLineIndices] = useState([]);
-  const [selectedFillIndices, setSelectedFillIndices] = useState([]);
   const [isSelecting, setIsSelecting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isDraggingEndpoint, setIsDraggingEndpoint] = useState(false);
@@ -54,70 +62,59 @@ const DrawingTool = () => {
   const [selectionStart, setSelectionStart] = useState({ x: 0, y: 0 });
   const [selectionEnd, setSelectionEnd] = useState({ x: 0, y: 0 });
   const [library, setLibrary] = useState([]);
-  const [libraryOpen, setLibraryOpen] = useState(true);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [colorPickerAnchor, setColorPickerAnchor] = useState(null);
   const [selectionPopoverAnchor, setSelectionPopoverAnchor] = useState(null);
+  const [shapeMenuAnchor, setShapeMenuAnchor] = useState(null);
+  const [currentShape, setCurrentShape] = useState('line'); // 'line', 'rectangle', 'circle', 'triangle', 'arrow', 'star'
+  const [isDrawingShape, setIsDrawingShape] = useState(false);
+  const [shapeStartPos, setShapeStartPos] = useState({ x: 0, y: 0 });
+  const [tempShape, setTempShape] = useState(null);
+  const [zoom, setZoom] = useState(1);
+  const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const stageRef = useRef();
 
   const GRID_SIZE = 25; // Grid spacing in pixels
   const ENDPOINT_RADIUS = 6; // Radius of endpoint circles
-  const LIBRARY_WIDTH = 250; // Width of the library sidebar
+  const LIBRARY_WIDTH = 280; // Width of the library sidebar
   const THUMBNAIL_SIZE = 100; // Size of thumbnail previews
-
-  // Predefined color palette
-  const colorPalette = [
-    '#000000',
-    '#ffffff',
-    '#ff0000',
-    '#00ff00',
-    '#0000ff',
-    '#ffff00',
-    '#ff00ff',
-    '#00ffff',
-    '#800000',
-    '#008000',
-    '#000080',
-    '#808000',
-    '#800080',
-    '#008080',
-    '#808080',
-    '#c0c0c0',
-    '#ffa500',
-    '#ffc0cb',
-    '#a52a2a',
-    '#dda0dd',
-    '#90ee90',
-    '#add8e6',
-    '#f0e68c',
-    '#deb887'
-  ];
+  const TOOLBAR_WIDTH = 60; // Width of the left toolbar
+  const TOP_BAR_HEIGHT = 48; // Height of the top bar
 
   const renderGrid = () => {
-    const canvasWidth = window.innerWidth - (libraryOpen ? LIBRARY_WIDTH : 0);
-    const height = window.innerHeight - 64;
+    const canvasWidth =
+      (window.innerWidth - TOOLBAR_WIDTH - (libraryOpen ? LIBRARY_WIDTH : 0)) /
+      zoom;
+    const height = (window.innerHeight - TOP_BAR_HEIGHT) / zoom;
     const gridLines = [];
 
+    // Calculate grid offset based on stage position
+    const startX = Math.floor(-stagePos.x / zoom / GRID_SIZE) * GRID_SIZE;
+    const startY = Math.floor(-stagePos.y / zoom / GRID_SIZE) * GRID_SIZE;
+    const endX = startX + canvasWidth + GRID_SIZE;
+    const endY = startY + height + GRID_SIZE;
+
     // Vertical lines
-    for (let x = 0; x <= canvasWidth; x += GRID_SIZE) {
+    for (let x = startX; x <= endX; x += GRID_SIZE) {
       gridLines.push(
         <Line
           key={`v-${x}`}
-          points={[x, 0, x, height]}
+          points={[x, startY, x, endY]}
           stroke="#e0e0e0"
-          strokeWidth={0.5}
+          strokeWidth={0.5 / zoom}
           opacity={0.5}
         />
       );
     }
 
     // Horizontal lines
-    for (let y = 0; y <= height; y += GRID_SIZE) {
+    for (let y = startY; y <= endY; y += GRID_SIZE) {
       gridLines.push(
         <Line
           key={`h-${y}`}
-          points={[0, y, canvasWidth, y]}
+          points={[startX, y, endX, y]}
           stroke="#e0e0e0"
-          strokeWidth={0.5}
+          strokeWidth={0.5 / zoom}
           opacity={0.5}
         />
       );
@@ -152,422 +149,50 @@ const DrawingTool = () => {
     return { isNear: false, pointIndex: -1 };
   };
 
-  const floodFill = (x, y, fillColor) => {
-    // Get the canvas data for flood fill analysis
-    const stage = stageRef.current;
-    const canvas = stage.toCanvas();
-    const ctx = canvas.getContext('2d');
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-
-    const targetColor = getPixelColor(data, x, y, canvas.width);
-
-    // Don't fill if clicking on the same color
-    if (colorsMatch(targetColor, hexToRgb(fillColor))) {
-      return;
-    }
-
-    const fillColorRgb = hexToRgb(fillColor);
-    const stack = [[x, y]];
-    const visited = new Set();
-    const fillPoints = [];
-
-    while (stack.length > 0) {
-      const [currentX, currentY] = stack.pop();
-      const key = `${currentX},${currentY}`;
-
-      if (
-        visited.has(key) ||
-        currentX < 0 ||
-        currentX >= canvas.width ||
-        currentY < 0 ||
-        currentY >= canvas.height
-      ) {
-        continue;
-      }
-
-      visited.add(key);
-      const pixelColor = getPixelColor(data, currentX, currentY, canvas.width);
-
-      if (!colorsMatch(pixelColor, targetColor)) {
-        continue;
-      }
-
-      fillPoints.push({ x: currentX, y: currentY });
-
-      // Add adjacent pixels to stack
-      stack.push([currentX + 1, currentY]);
-      stack.push([currentX - 1, currentY]);
-      stack.push([currentX, currentY + 1]);
-      stack.push([currentX, currentY - 1]);
-    }
-
-    if (fillPoints.length > 0) {
-      // Create a filled area
-      const newFill = {
-        id: Date.now(),
-        points: fillPoints,
-        color: fillColor,
-        bounds: calculateFillBounds(fillPoints)
-      };
-
-      setFills([...fills, newFill]);
-    }
-  };
-
-  const getPixelColor = (data, x, y, width) => {
-    const index = (y * width + x) * 4;
-    return {
-      r: data[index],
-      g: data[index + 1],
-      b: data[index + 2],
-      a: data[index + 3]
-    };
-  };
-
-  const colorsMatch = (color1, color2) => {
-    return (
-      Math.abs(color1.r - color2.r) < 10 &&
-      Math.abs(color1.g - color2.g) < 10 &&
-      Math.abs(color1.b - color2.b) < 10
-    );
-  };
-
-  const hexToRgb = hex => {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result
-      ? {
-          r: parseInt(result[1], 16),
-          g: parseInt(result[2], 16),
-          b: parseInt(result[3], 16)
-        }
-      : null;
-  };
-
-  const calculateFillBounds = points => {
-    if (points.length === 0) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-
-    let minX = points[0].x,
-      minY = points[0].y;
-    let maxX = points[0].x,
-      maxY = points[0].y;
-
-    points.forEach(point => {
-      minX = Math.min(minX, point.x);
-      minY = Math.min(minY, point.y);
-      maxX = Math.max(maxX, point.x);
-      maxY = Math.max(maxY, point.y);
-    });
-
-    return { minX, minY, maxX, maxY };
-  };
-
-  // Shape detection functions
-  const findClosedShapes = () => {
-    const connectionTolerance = 10; // pixels
-    const detectedShapes = [];
-
-    // Create a graph of line connections
-    const connections = new Map();
-
-    lines.forEach((line, lineIndex) => {
-      if (line.points.length < 4) return;
-
-      const startPoint = { x: line.points[0], y: line.points[1] };
-      const endPoint = {
-        x: line.points[line.points.length - 2],
-        y: line.points[line.points.length - 1]
-      };
-
-      const startKey = `${Math.round(startPoint.x / connectionTolerance) * connectionTolerance},${Math.round(startPoint.y / connectionTolerance) * connectionTolerance}`;
-      const endKey = `${Math.round(endPoint.x / connectionTolerance) * connectionTolerance},${Math.round(endPoint.y / connectionTolerance) * connectionTolerance}`;
-
-      if (!connections.has(startKey)) connections.set(startKey, []);
-      if (!connections.has(endKey)) connections.set(endKey, []);
-
-      connections
-        .get(startKey)
-        .push({ lineIndex, point: startPoint, isStart: true });
-      connections
-        .get(endKey)
-        .push({ lineIndex, point: endPoint, isStart: false });
-    });
-
-    // Find closed loops
-    const visitedLines = new Set();
-
-    lines.forEach((line, startLineIndex) => {
-      if (visitedLines.has(startLineIndex)) return;
-
-      const path = findClosedPath(
-        startLineIndex,
-        connections,
-        connectionTolerance,
-        visitedLines
-      );
-      if (path && path.length >= 3) {
-        // Create a polygon from the path
-        const shapePoints = [];
-        path.forEach(({ lineIndex, point }) => {
-          shapePoints.push(point.x, point.y);
-        });
-
-        const newShape = {
-          id: Date.now() + Math.random(),
-          points: shapePoints,
-          color: currentFillColor,
-          lineIndices: path.map(p => p.lineIndex),
-          bounds: calculatePolygonBounds(shapePoints)
-        };
-
-        detectedShapes.push(newShape);
-        path.forEach(({ lineIndex }) => visitedLines.add(lineIndex));
-      }
-    });
-
-    return detectedShapes;
-  };
-
-  const findClosedPath = (startLineIndex, connections, tolerance, visited) => {
-    const startLine = lines[startLineIndex];
-    if (!startLine || visited.has(startLineIndex)) return null;
-
-    const startPoint = { x: startLine.points[0], y: startLine.points[1] };
-    const endPoint = {
-      x: startLine.points[startLine.points.length - 2],
-      y: startLine.points[startLine.points.length - 1]
-    };
-
-    const path = [{ lineIndex: startLineIndex, point: startPoint }];
-    const visitedInPath = new Set([startLineIndex]);
-
-    let currentPoint = endPoint;
-    let iterations = 0;
-    const maxIterations = 50; // Prevent infinite loops
-
-    while (iterations < maxIterations) {
-      iterations++;
-
-      // Find the next connected line
-      const currentKey = `${Math.round(currentPoint.x / tolerance) * tolerance},${Math.round(currentPoint.y / tolerance) * tolerance}`;
-      const connectedLines = connections.get(currentKey) || [];
-
-      let nextLine = null;
-      for (const connection of connectedLines) {
-        if (
-          !visitedInPath.has(connection.lineIndex) &&
-          connection.lineIndex !== startLineIndex
-        ) {
-          nextLine = connection;
-          break;
-        }
-      }
-
-      if (!nextLine) {
-        // Check if we can close the loop by connecting back to start
-        const distanceToStart = Math.sqrt(
-          Math.pow(currentPoint.x - startPoint.x, 2) +
-            Math.pow(currentPoint.y - startPoint.y, 2)
-        );
-
-        if (distanceToStart <= tolerance && path.length >= 3) {
-          return path; // Closed loop found
-        }
-        break;
-      }
-
-      const nextLineData = lines[nextLine.lineIndex];
-      path.push({ lineIndex: nextLine.lineIndex, point: currentPoint });
-      visitedInPath.add(nextLine.lineIndex);
-
-      // Move to the other end of the next line
-      if (nextLine.isStart) {
-        currentPoint = {
-          x: nextLineData.points[nextLineData.points.length - 2],
-          y: nextLineData.points[nextLineData.points.length - 1]
-        };
-      } else {
-        currentPoint = {
-          x: nextLineData.points[0],
-          y: nextLineData.points[1]
-        };
-      }
-    }
-
-    return null;
-  };
-
-  const calculatePolygonBounds = points => {
-    if (points.length < 2) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-
-    let minX = points[0],
-      minY = points[1];
-    let maxX = points[0],
-      maxY = points[1];
-
-    for (let i = 0; i < points.length; i += 2) {
-      minX = Math.min(minX, points[i]);
-      maxX = Math.max(maxX, points[i]);
-      minY = Math.min(minY, points[i + 1]);
-      maxY = Math.max(maxY, points[i + 1]);
-    }
-
-    return { minX, minY, maxX, maxY };
-  };
-
-  const createShapesFromLines = () => {
-    const detectedShapes = findClosedShapes();
-
-    if (detectedShapes.length > 0) {
-      // Add detected shapes to shapes array
-      setShapes([...shapes, ...detectedShapes]);
-
-      // Optionally remove the lines that formed the shapes
-      const lineIndicesToRemove = new Set();
-      detectedShapes.forEach(shape => {
-        shape.lineIndices.forEach(index => lineIndicesToRemove.add(index));
-      });
-
-      const remainingLines = lines.filter(
-        (_, index) => !lineIndicesToRemove.has(index)
-      );
-      setLines(remainingLines);
-
-      // Clear selection since we may have removed selected lines
-      setSelectedLineIndices([]);
-    }
-  };
-
-  const solidifySelectedLines = () => {
-    if (selectedLineIndices.length === 0) return;
-
-    // Create a polygon from the selected lines by connecting their endpoints
-    const selectedLines = selectedLineIndices.map(index => lines[index]);
-    const polygonPoints = [];
-
-    // Try to create a connected path from the selected lines
-    const usedLines = new Set();
-    let currentLine = selectedLines[0];
-    let currentLineIndex = selectedLineIndices[0];
-    usedLines.add(currentLineIndex);
-
-    // Start with the first line
-    polygonPoints.push(currentLine.points[0], currentLine.points[1]);
-    let lastPoint = {
-      x: currentLine.points[currentLine.points.length - 2],
-      y: currentLine.points[currentLine.points.length - 1]
-    };
-    polygonPoints.push(lastPoint.x, lastPoint.y);
-
-    // Try to connect subsequent lines
-    while (usedLines.size < selectedLines.length) {
-      let foundConnection = false;
-
-      for (let i = 0; i < selectedLines.length; i++) {
-        const lineIndex = selectedLineIndices[i];
-        if (usedLines.has(lineIndex)) continue;
-
-        const line = selectedLines[i];
-        const startPoint = { x: line.points[0], y: line.points[1] };
-        const endPoint = {
-          x: line.points[line.points.length - 2],
-          y: line.points[line.points.length - 1]
-        };
-
-        const distanceToStart = Math.sqrt(
-          Math.pow(lastPoint.x - startPoint.x, 2) +
-            Math.pow(lastPoint.y - startPoint.y, 2)
-        );
-        const distanceToEnd = Math.sqrt(
-          Math.pow(lastPoint.x - endPoint.x, 2) +
-            Math.pow(lastPoint.y - endPoint.y, 2)
-        );
-
-        if (distanceToStart < 20) {
-          // Connect to start of this line, use end as next point
-          polygonPoints.push(endPoint.x, endPoint.y);
-          lastPoint = endPoint;
-          usedLines.add(lineIndex);
-          foundConnection = true;
-          break;
-        } else if (distanceToEnd < 20) {
-          // Connect to end of this line, use start as next point
-          polygonPoints.push(startPoint.x, startPoint.y);
-          lastPoint = startPoint;
-          usedLines.add(lineIndex);
-          foundConnection = true;
-          break;
-        }
-      }
-
-      if (!foundConnection) {
-        // If we can't connect more lines, just add remaining endpoints
-        for (let i = 0; i < selectedLines.length; i++) {
-          const lineIndex = selectedLineIndices[i];
-          if (!usedLines.has(lineIndex)) {
-            const line = selectedLines[i];
-            polygonPoints.push(line.points[0], line.points[1]);
-            polygonPoints.push(
-              line.points[line.points.length - 2],
-              line.points[line.points.length - 1]
-            );
-          }
-        }
-        break;
-      }
-    }
-
-    if (polygonPoints.length >= 6) {
-      // At least 3 points
-      // Create a filled area from the polygon
-      const bounds = calculatePolygonBounds(polygonPoints);
-      const newFill = {
-        id: Date.now(),
-        points: polygonPoints
-          .map((coord, index) =>
-            index % 2 === 0 ? { x: coord, y: polygonPoints[index + 1] } : null
-          )
-          .filter(p => p !== null),
-        color: currentFillColor,
-        bounds: bounds,
-        isFromLines: true,
-        polygonPoints: polygonPoints // Store for rendering
-      };
-
-      // Remove the selected lines and add the fill
-      const remainingLines = lines.filter(
-        (_, index) => !selectedLineIndices.includes(index)
-      );
-      setLines(remainingLines);
-      setFills([...fills, newFill]);
-      setSelectedLineIndices([]);
-      setSelectionPopoverAnchor(null);
-    }
-  };
-
   const handleMouseDown = e => {
     if (mode === 'draw') {
-      setIsDrawing(true);
       const pos = e.target.getStage().getPointerPosition();
-      setLines([
-        ...lines,
-        {
-          points: [pos.x, pos.y],
+      const adjustedPos = {
+        x: (pos.x - stagePos.x) / zoom,
+        y: (pos.y - stagePos.y) / zoom
+      };
+
+      if (currentShape === 'line') {
+        setIsDrawing(true);
+        setLines([
+          ...lines,
+          {
+            points: [adjustedPos.x, adjustedPos.y],
+            stroke: currentColor,
+            strokeWidth: 4,
+            isSnapped: false
+          }
+        ]);
+      } else {
+        // Drawing shapes
+        setIsDrawingShape(true);
+        setShapeStartPos(adjustedPos);
+        setTempShape({
+          type: currentShape,
+          startX: adjustedPos.x,
+          startY: adjustedPos.y,
+          endX: adjustedPos.x,
+          endY: adjustedPos.y,
           stroke: currentColor,
-          strokeWidth: 4,
-          isSnapped: false
-        }
-      ]);
-    } else if (mode === 'fill') {
-      const pos = e.target.getStage().getPointerPosition();
-      floodFill(Math.round(pos.x), Math.round(pos.y), currentFillColor);
+          strokeWidth: 2
+        });
+      }
     } else if (mode === 'select') {
       const pos = e.target.getStage().getPointerPosition();
+      const adjustedPos = {
+        x: (pos.x - stagePos.x) / zoom,
+        y: (pos.y - stagePos.y) / zoom
+      };
 
       // Check if clicking on an endpoint of a selected line
       if (selectedLineIndices.length === 1) {
         const lineIndex = selectedLineIndices[0];
-        const endpointCheck = isPointNearEndpoint(pos, lineIndex);
+        const endpointCheck = isPointNearEndpoint(adjustedPos, lineIndex);
 
         if (endpointCheck.isNear) {
           setIsDraggingEndpoint(true);
@@ -579,10 +204,9 @@ const DrawingTool = () => {
         }
       }
 
-      const clickedItem = findLineAtPosition(pos) || findFillAtPosition(pos);
+      const clickedItem = findLineAtPosition(adjustedPos);
 
       if (clickedItem) {
-        // Clicking on a line or fill
         if (e.evt.ctrlKey || e.evt.metaKey) {
           // Ctrl/Cmd + click to toggle selection
           if (clickedItem.type === 'line') {
@@ -595,19 +219,6 @@ const DrawingTool = () => {
                 ...selectedLineIndices,
                 clickedItem.index
               ]);
-              setSelectedFillIndices([]); // Clear fill selection when selecting lines
-            }
-          } else if (clickedItem.type === 'fill') {
-            if (selectedFillIndices.includes(clickedItem.index)) {
-              setSelectedFillIndices(
-                selectedFillIndices.filter(i => i !== clickedItem.index)
-              );
-            } else {
-              setSelectedFillIndices([
-                ...selectedFillIndices,
-                clickedItem.index
-              ]);
-              setSelectedLineIndices([]); // Clear line selection when selecting fills
             }
           }
         } else {
@@ -615,17 +226,11 @@ const DrawingTool = () => {
           if (clickedItem.type === 'line') {
             if (!selectedLineIndices.includes(clickedItem.index)) {
               setSelectedLineIndices([clickedItem.index]);
-              setSelectedFillIndices([]);
-            }
-          } else if (clickedItem.type === 'fill') {
-            if (!selectedFillIndices.includes(clickedItem.index)) {
-              setSelectedFillIndices([clickedItem.index]);
-              setSelectedLineIndices([]);
             }
           }
           // Start dragging
           setIsDragging(true);
-          setDragStartPos(pos);
+          setDragStartPos(adjustedPos);
         }
       } else {
         // Clicking on empty space - start drag selection
@@ -634,8 +239,8 @@ const DrawingTool = () => {
           setSelectionPopoverAnchor(null);
         }
         setIsSelecting(true);
-        setSelectionStart(pos);
-        setSelectionEnd(pos);
+        setSelectionStart(adjustedPos);
+        setSelectionEnd(adjustedPos);
       }
     }
   };
@@ -659,56 +264,6 @@ const DrawingTool = () => {
       }
     }
     return null;
-  };
-
-  const findFillAtPosition = pos => {
-    // Check if click is inside any fill/shape
-    for (let i = fills.length - 1; i >= 0; i--) {
-      const fill = fills[i];
-
-      if (fill.polygonPoints) {
-        // Check if point is inside polygon (for solidified shapes)
-        if (isPointInPolygon(pos, fill.polygonPoints)) {
-          return { type: 'fill', index: i };
-        }
-      } else {
-        // Check if point is inside rectangle bounds (for flood fills)
-        const bounds = fill.bounds;
-        if (
-          pos.x >= bounds.minX &&
-          pos.x <= bounds.maxX &&
-          pos.y >= bounds.minY &&
-          pos.y <= bounds.maxY
-        ) {
-          return { type: 'fill', index: i };
-        }
-      }
-    }
-    return null;
-  };
-
-  const isPointInPolygon = (point, polygonPoints) => {
-    const x = point.x,
-      y = point.y;
-    let inside = false;
-
-    for (
-      let i = 0, j = polygonPoints.length - 2;
-      i < polygonPoints.length;
-      i += 2
-    ) {
-      const xi = polygonPoints[i],
-        yi = polygonPoints[i + 1];
-      const xj = polygonPoints[j],
-        yj = polygonPoints[j + 1];
-
-      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) {
-        inside = !inside;
-      }
-      j = i;
-    }
-
-    return inside;
   };
 
   const isLineInSelectionBox = (line, box) => {
@@ -866,7 +421,7 @@ const DrawingTool = () => {
       return;
     }
 
-    if (mode === 'draw' && isDrawing) {
+    if (mode === 'draw' && isDrawing && currentShape === 'line') {
       // Clear existing snap timer
       if (snapTimer) {
         clearTimeout(snapTimer);
@@ -874,6 +429,10 @@ const DrawingTool = () => {
 
       const stage = e.target.getStage();
       const point = stage.getPointerPosition();
+      const adjustedPoint = {
+        x: (point.x - stagePos.x) / zoom,
+        y: (point.y - stagePos.y) / zoom
+      };
       const lastLine = lines[lines.length - 1];
 
       // Don't modify if already snapped
@@ -882,7 +441,10 @@ const DrawingTool = () => {
       }
 
       // Add point to the current line
-      lastLine.points = lastLine.points.concat([point.x, point.y]);
+      lastLine.points = lastLine.points.concat([
+        adjustedPoint.x,
+        adjustedPoint.y
+      ]);
 
       // Replace last line with updated line
       lines.splice(lines.length - 1, 1, lastLine);
@@ -894,18 +456,36 @@ const DrawingTool = () => {
       }, 750);
 
       setSnapTimer(newTimer);
+    } else if (mode === 'draw' && isDrawingShape && tempShape) {
+      // Update temporary shape while dragging
+      const stage = e.target.getStage();
+      const point = stage.getPointerPosition();
+      const adjustedPoint = {
+        x: (point.x - stagePos.x) / zoom,
+        y: (point.y - stagePos.y) / zoom
+      };
+
+      setTempShape({
+        ...tempShape,
+        endX: adjustedPoint.x,
+        endY: adjustedPoint.y
+      });
     } else if (mode === 'select' && isDraggingEndpoint) {
       // Drag endpoint to resize line
       const stage = e.target.getStage();
       const point = stage.getPointerPosition();
+      const adjustedPoint = {
+        x: (point.x - stagePos.x) / zoom,
+        y: (point.y - stagePos.y) / zoom
+      };
 
       const updatedLines = [...lines];
       const line = updatedLines[draggedEndpoint.lineIndex];
       const newPoints = [...line.points];
 
       // Update the dragged endpoint
-      newPoints[draggedEndpoint.pointIndex] = point.x;
-      newPoints[draggedEndpoint.pointIndex + 1] = point.y;
+      newPoints[draggedEndpoint.pointIndex] = adjustedPoint.x;
+      newPoints[draggedEndpoint.pointIndex + 1] = adjustedPoint.y;
 
       updatedLines[draggedEndpoint.lineIndex] = {
         ...line,
@@ -916,14 +496,18 @@ const DrawingTool = () => {
     } else if (
       mode === 'select' &&
       isDragging &&
-      (selectedLineIndices.length > 0 || selectedFillIndices.length > 0)
+      selectedLineIndices.length > 0
     ) {
-      // Drag selected lines and fills
+      // Drag selected lines
       const stage = e.target.getStage();
       const point = stage.getPointerPosition();
+      const adjustedPoint = {
+        x: (point.x - stagePos.x) / zoom,
+        y: (point.y - stagePos.y) / zoom
+      };
 
-      const deltaX = point.x - dragStartPos.x;
-      const deltaY = point.y - dragStartPos.y;
+      const deltaX = adjustedPoint.x - dragStartPos.x;
+      const deltaY = adjustedPoint.y - dragStartPos.y;
 
       // Move selected lines
       if (selectedLineIndices.length > 0) {
@@ -947,58 +531,16 @@ const DrawingTool = () => {
         setLines(updatedLines);
       }
 
-      // Move selected fills
-      if (selectedFillIndices.length > 0) {
-        const updatedFills = [...fills];
-
-        selectedFillIndices.forEach(fillIndex => {
-          const fill = updatedFills[fillIndex];
-
-          if (fill.polygonPoints) {
-            // Move polygon points
-            const newPolygonPoints = [];
-            for (let i = 0; i < fill.polygonPoints.length; i += 2) {
-              newPolygonPoints.push(fill.polygonPoints[i] + deltaX);
-              newPolygonPoints.push(fill.polygonPoints[i + 1] + deltaY);
-            }
-
-            updatedFills[fillIndex] = {
-              ...fill,
-              polygonPoints: newPolygonPoints,
-              bounds: {
-                minX: fill.bounds.minX + deltaX,
-                minY: fill.bounds.minY + deltaY,
-                maxX: fill.bounds.maxX + deltaX,
-                maxY: fill.bounds.maxY + deltaY
-              }
-            };
-          } else {
-            // Move rectangular fill bounds
-            updatedFills[fillIndex] = {
-              ...fill,
-              bounds: {
-                minX: fill.bounds.minX + deltaX,
-                minY: fill.bounds.minY + deltaY,
-                maxX: fill.bounds.maxX + deltaX,
-                maxY: fill.bounds.maxY + deltaY
-              },
-              points: fill.points.map(point => ({
-                x: point.x + deltaX,
-                y: point.y + deltaY
-              }))
-            };
-          }
-        });
-
-        setFills(updatedFills);
-      }
-
-      setDragStartPos(point);
+      setDragStartPos(adjustedPoint);
     } else if (mode === 'select' && isSelecting) {
       // Update selection box
       const stage = e.target.getStage();
       const point = stage.getPointerPosition();
-      setSelectionEnd(point);
+      const adjustedPoint = {
+        x: (point.x - stagePos.x) / zoom,
+        y: (point.y - stagePos.y) / zoom
+      };
+      setSelectionEnd(adjustedPoint);
     }
   };
 
@@ -1007,11 +549,15 @@ const DrawingTool = () => {
       // Drop the library drawing into the canvas
       const stage = e.target.getStage();
       const dropPos = stage.getPointerPosition();
+      const adjustedPos = {
+        x: (dropPos.x - stagePos.x) / zoom,
+        y: (dropPos.y - stagePos.y) / zoom
+      };
 
       // Calculate bounds of the dragged drawing
       const bounds = calculateDrawingBounds(draggedDrawing.lines);
-      const offsetX = dropPos.x - bounds.minX;
-      const offsetY = dropPos.y - bounds.minY;
+      const offsetX = adjustedPos.x - bounds.minX;
+      const offsetY = adjustedPos.y - bounds.minY;
 
       // Add the drawing lines to current canvas with offset
       const newLines = draggedDrawing.lines.map(line => ({
@@ -1021,58 +567,28 @@ const DrawingTool = () => {
         )
       }));
 
-      // Add fills if they exist (from solidified shapes and flood fills)
-      const newFills = draggedDrawing.fills
-        ? draggedDrawing.fills.map(fill => {
-            if (fill.polygonPoints) {
-              // Handle polygon-based fills (from solidified shapes)
-              return {
-                ...fill,
-                id: Date.now() + Math.random(), // New unique ID
-                polygonPoints: fill.polygonPoints.map((point, index) =>
-                  index % 2 === 0 ? point + offsetX : point + offsetY
-                ),
-                bounds: {
-                  minX: fill.bounds.minX + offsetX,
-                  minY: fill.bounds.minY + offsetY,
-                  maxX: fill.bounds.maxX + offsetX,
-                  maxY: fill.bounds.maxY + offsetY
-                }
-              };
-            } else {
-              // Handle rectangular fills (from flood fill)
-              return {
-                ...fill,
-                id: Date.now() + Math.random(), // New unique ID
-                points: fill.points.map(point => ({
-                  x: point.x + offsetX,
-                  y: point.y + offsetY
-                })),
-                bounds: {
-                  minX: fill.bounds.minX + offsetX,
-                  minY: fill.bounds.minY + offsetY,
-                  maxX: fill.bounds.maxX + offsetX,
-                  maxY: fill.bounds.maxY + offsetY
-                }
-              };
-            }
-          })
-        : [];
-
       setLines([...lines, ...newLines]);
-      setFills([...fills, ...newFills]);
       setIsDraggingFromLibrary(false);
       setDraggedDrawing(null);
       return;
     }
 
     if (mode === 'draw') {
-      setIsDrawing(false);
-
-      // Clear snap timer when mouse is released
-      if (snapTimer) {
-        clearTimeout(snapTimer);
-        setSnapTimer(null);
+      if (isDrawingShape && tempShape) {
+        // Finalize the shape and add it to lines
+        const newShape = createShapePoints(tempShape);
+        if (newShape) {
+          setLines([...lines, newShape]);
+        }
+        setIsDrawingShape(false);
+        setTempShape(null);
+      } else if (isDrawing) {
+        setIsDrawing(false);
+        // Clear snap timer when mouse is released
+        if (snapTimer) {
+          clearTimeout(snapTimer);
+          setSnapTimer(null);
+        }
       }
     } else if (mode === 'select') {
       if (isDraggingEndpoint) {
@@ -1142,13 +658,12 @@ const DrawingTool = () => {
   };
 
   const saveToLibrary = () => {
-    if (lines.length === 0 && fills.length === 0) return;
+    if (lines.length === 0) return;
 
     const newDrawing = {
       id: Date.now(),
       name: `Drawing ${library.length + 1}`,
       lines: JSON.parse(JSON.stringify(lines)), // Deep copy
-      fills: JSON.parse(JSON.stringify(fills)), // Deep copy
       timestamp: new Date().toISOString(),
       bounds: calculateDrawingBounds(lines)
     };
@@ -1158,9 +673,7 @@ const DrawingTool = () => {
 
   const clearCanvas = () => {
     setLines([]);
-    setFills([]);
     setSelectedLineIndices([]);
-    setSelectedFillIndices([]);
   };
 
   const deleteSelectedItems = () => {
@@ -1170,14 +683,6 @@ const DrawingTool = () => {
       );
       setLines(updatedLines);
       setSelectedLineIndices([]);
-    }
-
-    if (selectedFillIndices.length > 0) {
-      const updatedFills = fills.filter(
-        (_, index) => !selectedFillIndices.includes(index)
-      );
-      setFills(updatedFills);
-      setSelectedFillIndices([]);
     }
   };
 
@@ -1205,13 +710,15 @@ const DrawingTool = () => {
     setMode(newMode);
     // Reset any ongoing operations when switching modes
     setIsDrawing(false);
+    setIsDrawingShape(false);
+    setTempShape(null);
     setSelectedLineIndices([]);
-    setSelectedFillIndices([]);
     setIsSelecting(false);
     setIsDragging(false);
     setIsDraggingEndpoint(false);
     setDraggedEndpoint({ lineIndex: -1, pointIndex: -1 });
     setSelectionPopoverAnchor(null);
+    setShapeMenuAnchor(null);
     if (snapTimer) {
       clearTimeout(snapTimer);
       setSnapTimer(null);
@@ -1277,6 +784,181 @@ const DrawingTool = () => {
     return { x: centerX, y: centerY };
   };
 
+  const createShapePoints = shape => {
+    const { type, startX, startY, endX, endY, stroke, strokeWidth } = shape;
+    const width = endX - startX;
+    const height = endY - startY;
+
+    // Don't create tiny shapes
+    if (Math.abs(width) < 5 && Math.abs(height) < 5) {
+      return null;
+    }
+
+    switch (type) {
+      case 'rectangle':
+        return {
+          points: [
+            startX,
+            startY,
+            endX,
+            startY,
+            endX,
+            endY,
+            startX,
+            endY,
+            startX,
+            startY
+          ],
+          stroke,
+          strokeWidth,
+          isSnapped: true
+        };
+
+      case 'circle':
+        // Create circle using multiple points
+        const centerX = (startX + endX) / 2;
+        const centerY = (startY + endY) / 2;
+        const radiusX = Math.abs(width) / 2;
+        const radiusY = Math.abs(height) / 2;
+        const points = [];
+        const segments = 32;
+
+        for (let i = 0; i <= segments; i++) {
+          const angle = (i / segments) * Math.PI * 2;
+          const x = centerX + Math.cos(angle) * radiusX;
+          const y = centerY + Math.sin(angle) * radiusY;
+          points.push(x, y);
+        }
+
+        return {
+          points,
+          stroke,
+          strokeWidth,
+          isSnapped: true
+        };
+
+      case 'triangle':
+        // Create triangle with top point and bottom base
+        const topX = (startX + endX) / 2;
+        const topY = Math.min(startY, endY);
+        const bottomY = Math.max(startY, endY);
+
+        return {
+          points: [topX, topY, startX, bottomY, endX, bottomY, topX, topY],
+          stroke,
+          strokeWidth,
+          isSnapped: true
+        };
+
+      case 'arrow':
+        // Create simple arrow shape
+        const headSize = Math.min(Math.abs(width), Math.abs(height)) * 0.3;
+        const bodyEndX = endX - (width > 0 ? headSize : -headSize);
+
+        return {
+          points: [
+            startX,
+            startY,
+            bodyEndX,
+            startY,
+            bodyEndX,
+            startY - headSize / 2,
+            endX,
+            (startY + endY) / 2,
+            bodyEndX,
+            endY + headSize / 2,
+            bodyEndX,
+            endY,
+            startX,
+            endY,
+            startX,
+            startY
+          ],
+          stroke,
+          strokeWidth,
+          isSnapped: true
+        };
+
+      case 'star':
+        // Create 5-pointed star
+        const starCenterX = (startX + endX) / 2;
+        const starCenterY = (startY + endY) / 2;
+        const outerRadius = Math.min(Math.abs(width), Math.abs(height)) / 2;
+        const innerRadius = outerRadius * 0.4;
+        const starPoints = [];
+
+        for (let i = 0; i < 10; i++) {
+          const angle = (i / 10) * Math.PI * 2 - Math.PI / 2;
+          const radius = i % 2 === 0 ? outerRadius : innerRadius;
+          const x = starCenterX + Math.cos(angle) * radius;
+          const y = starCenterY + Math.sin(angle) * radius;
+          starPoints.push(x, y);
+        }
+        starPoints.push(starPoints[0], starPoints[1]); // Close the shape
+
+        return {
+          points: starPoints,
+          stroke,
+          strokeWidth,
+          isSnapped: true
+        };
+
+      default:
+        return null;
+    }
+  };
+
+  const handleShapeMenuOpen = event => {
+    setShapeMenuAnchor(event.currentTarget);
+  };
+
+  const handleShapeMenuClose = () => {
+    setShapeMenuAnchor(null);
+  };
+
+  const selectShape = shape => {
+    setCurrentShape(shape);
+    handleShapeMenuClose();
+  };
+
+  const getShapeIcon = shape => {
+    switch (shape) {
+      case 'line':
+        return <Edit />;
+      case 'rectangle':
+        return <CropSquare />;
+      case 'circle':
+        return <RadioButtonUnchecked />;
+      case 'triangle':
+        return <ChangeHistory />;
+      case 'arrow':
+        return <ArrowForward />;
+      case 'star':
+        return <Star />;
+      default:
+        return <Edit />;
+    }
+  };
+
+  const getShapeName = shape => {
+    switch (shape) {
+      case 'line':
+        return 'Free Draw';
+      case 'rectangle':
+        return 'Rectangle';
+      case 'circle':
+        return 'Circle';
+      case 'triangle':
+        return 'Triangle';
+      case 'arrow':
+        return 'Arrow';
+      case 'star':
+        return 'Star';
+      default:
+        return 'Free Draw';
+    }
+  };
+
   // Cleanup timer on unmount and add keyboard listener
   useEffect(() => {
     // Add keyboard event listener
@@ -1288,34 +970,16 @@ const DrawingTool = () => {
       }
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [snapTimer, selectedLineIndices, selectedFillIndices]);
+  }, [snapTimer, selectedLineIndices]);
 
   const getCursorStyle = () => {
     if (isDraggingFromLibrary) return 'copy';
     if (mode === 'draw') return 'crosshair';
-    if (mode === 'fill') return 'crosshair';
     if (mode === 'select') {
       if (isDragging || isDraggingEndpoint) return 'grabbing';
       return 'default';
     }
     return 'default';
-  };
-
-  const getHelpText = () => {
-    if (isDraggingFromLibrary) {
-      return 'Drop the drawing anywhere on the canvas to add it to your current work';
-    }
-
-    switch (mode) {
-      case 'draw':
-        return 'Hold still while drawing to snap to a straight line';
-      case 'fill':
-        return 'Click on enclosed areas to fill them with color';
-      case 'select':
-        return 'Click lines to select, drag to move, or drag empty space to select multiple. Drag endpoints to resize. Ctrl+click to toggle selection. Backspace/Delete to remove';
-      default:
-        return '';
-    }
   };
 
   const getLineStyle = index => {
@@ -1378,46 +1042,6 @@ const DrawingTool = () => {
     ];
   };
 
-  const renderFills = () => {
-    return fills.map((fill, index) => {
-      const isSelected =
-        mode === 'select' && selectedFillIndices.includes(index);
-
-      // If fill has polygon points (from solidified lines), render as polygon
-      if (fill.polygonPoints) {
-        return (
-          <Line
-            key={`fill-${index}`}
-            points={fill.polygonPoints}
-            fill={fill.color}
-            stroke={isSelected ? '#ff4444' : fill.color}
-            strokeWidth={isSelected ? 3 : 1}
-            dash={isSelected ? [5, 5] : undefined}
-            closed={true}
-            opacity={isSelected ? 0.9 : 0.7}
-          />
-        );
-      }
-
-      // Otherwise render as rectangle (original flood fill)
-      const bounds = fill.bounds;
-      return (
-        <Rect
-          key={`fill-${index}`}
-          x={bounds.minX}
-          y={bounds.minY}
-          width={bounds.maxX - bounds.minX}
-          height={bounds.maxY - bounds.minY}
-          fill={fill.color}
-          stroke={isSelected ? '#ff4444' : undefined}
-          strokeWidth={isSelected ? 3 : 0}
-          dash={isSelected ? [5, 5] : undefined}
-          opacity={isSelected ? 0.9 : 0.7}
-        />
-      );
-    });
-  };
-
   const renderThumbnail = drawing => {
     const bounds = drawing.bounds;
     const drawingWidth = bounds.maxX - bounds.minX;
@@ -1436,19 +1060,6 @@ const DrawingTool = () => {
     return (
       <Stage width={THUMBNAIL_SIZE} height={THUMBNAIL_SIZE}>
         <Layer>
-          {/* Render fills */}
-          {drawing.fills &&
-            drawing.fills.map((fill, i) => (
-              <Rect
-                key={`thumb-fill-${i}`}
-                x={fill.bounds.minX * scale + offsetX}
-                y={fill.bounds.minY * scale + offsetY}
-                width={(fill.bounds.maxX - fill.bounds.minX) * scale}
-                height={(fill.bounds.maxY - fill.bounds.minY) * scale}
-                fill={fill.color}
-                opacity={0.7}
-              />
-            ))}
           {/* Render lines */}
           {drawing.lines.map((line, i) => (
             <Line
@@ -1470,244 +1081,422 @@ const DrawingTool = () => {
     );
   };
 
+  const handleZoomIn = () => {
+    setZoom(prev => Math.min(prev * 1.2, 3));
+  };
+
+  const handleZoomOut = () => {
+    setZoom(prev => Math.max(prev / 1.2, 0.1));
+  };
+
+  const handleZoomReset = () => {
+    setZoom(1);
+    setStagePos({ x: 0, y: 0 });
+  };
+
+  const handleWheel = e => {
+    e.evt.preventDefault();
+
+    const scaleBy = 1.1;
+    const stage = e.target.getStage();
+    const oldScale = stage.scaleX();
+    const pointer = stage.getPointerPosition();
+
+    const newScale = e.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy;
+    const clampedScale = Math.max(0.1, Math.min(newScale, 3));
+
+    setZoom(clampedScale);
+
+    const newPos = {
+      x: pointer.x - (pointer.x - stagePos.x) * (clampedScale / oldScale),
+      y: pointer.y - (pointer.y - stagePos.y) * (clampedScale / oldScale)
+    };
+
+    setStagePos(newPos);
+  };
+
   return (
-    <Box sx={{ display: 'flex', width: '100%', height: '100vh' }}>
-      {/* Main drawing area */}
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <AppBar position="static" color="default" elevation={1}>
-          <Toolbar>
-            <IconButton onClick={clearCanvas}>
-              <Clear />
-            </IconButton>
+    <Box
+      sx={{
+        display: 'flex',
+        width: '100%',
+        height: '100vh',
+        bgcolor: '#f8f9fa'
+      }}
+    >
+      {/* Top Bar */}
+      <Box
+        sx={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: TOP_BAR_HEIGHT,
+          bgcolor: 'white',
+          borderBottom: '1px solid #e0e0e0',
+          display: 'flex',
+          alignItems: 'center',
+          px: 2,
+          zIndex: 1300
+        }}
+      >
+        <IconButton size="small" sx={{ mr: 1 }}>
+          <Close />
+        </IconButton>
+        <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 500 }}>
+          Untitled Board
+        </Typography>
+      </Box>
 
-            <IconButton
-              onClick={saveToLibrary}
-              disabled={lines.length === 0 && fills.length === 0}
-              color={
-                lines.length > 0 || fills.length > 0 ? 'primary' : 'default'
+      {/* Left Toolbar */}
+      <Box
+        sx={{
+          position: 'fixed',
+          left: 0,
+          top: TOP_BAR_HEIGHT,
+          bottom: 0,
+          width: TOOLBAR_WIDTH,
+          bgcolor: 'white',
+          borderRight: '1px solid #e0e0e0',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          py: 2,
+          gap: 1,
+          zIndex: 1200
+        }}
+      >
+        <Tooltip title="Select & Move" placement="right">
+          <IconButton
+            onClick={() => setModeAndReset('select')}
+            color={mode === 'select' ? 'primary' : 'default'}
+            sx={{
+              width: 40,
+              height: 40,
+              bgcolor: mode === 'select' ? 'primary.light' : 'transparent',
+              '&:hover': {
+                bgcolor: mode === 'select' ? 'primary.light' : 'action.hover'
               }
-            >
-              <Save />
-            </IconButton>
+            }}
+          >
+            <AdsClick />
+          </IconButton>
+        </Tooltip>
 
-            <IconButton onClick={() => setLibraryOpen(!libraryOpen)}>
-              <LibraryBooks />
-            </IconButton>
-
-            <Box
-              sx={{
-                width: 24,
-                height: 24,
-                backgroundColor: currentColor,
-                border: '2px solid #000',
-                borderRadius: '4px',
-                mr: 1,
-                cursor: 'pointer'
-              }}
-              onClick={handleColorPickerOpen}
-            />
-
-            <Popover
-              open={Boolean(colorPickerAnchor)}
-              anchorEl={colorPickerAnchor}
-              onClose={handleColorPickerClose}
-              anchorOrigin={{
-                vertical: 'bottom',
-                horizontal: 'left'
-              }}
-            >
-              <Box sx={{ p: 2, width: 200 }}>
-                <Typography variant="subtitle2" gutterBottom>
-                  Line Color
-                </Typography>
-                <Grid container spacing={1} sx={{ mb: 2 }}>
-                  {colorPalette.map(color => (
-                    <Grid item key={color}>
-                      <Box
-                        sx={{
-                          width: 20,
-                          height: 20,
-                          backgroundColor: color,
-                          border:
-                            currentColor === color
-                              ? '2px solid #1976d2'
-                              : '1px solid #ccc',
-                          cursor: 'pointer',
-                          borderRadius: '4px'
-                        }}
-                        onClick={() => selectColor(color)}
-                      />
-                    </Grid>
-                  ))}
-                </Grid>
-
-                <Typography variant="subtitle2" gutterBottom>
-                  Fill Color
-                </Typography>
-                <Grid container spacing={1}>
-                  {colorPalette.map(color => (
-                    <Grid item key={`fill-${color}`}>
-                      <Box
-                        sx={{
-                          width: 20,
-                          height: 20,
-                          backgroundColor: color,
-                          border:
-                            currentFillColor === color
-                              ? '2px solid #1976d2'
-                              : '1px solid #ccc',
-                          cursor: 'pointer',
-                          borderRadius: '4px'
-                        }}
-                        onClick={() => setCurrentFillColor(color)}
-                      />
-                    </Grid>
-                  ))}
-                </Grid>
-              </Box>
-            </Popover>
-
-            {/* Selection Actions Popover */}
-            <Popover
-              open={
-                Boolean(selectionPopoverAnchor) &&
-                selectedLineIndices.length > 1 &&
-                mode === 'select'
+        <Tooltip
+          title={`Draw - ${getShapeName(currentShape)}`}
+          placement="right"
+        >
+          <IconButton
+            onClick={() => setModeAndReset('draw')}
+            color={mode === 'draw' ? 'primary' : 'default'}
+            sx={{
+              width: 40,
+              height: 40,
+              bgcolor: mode === 'draw' ? 'primary.light' : 'transparent',
+              '&:hover': {
+                bgcolor: mode === 'draw' ? 'primary.light' : 'action.hover'
               }
-              anchorReference="anchorPosition"
-              anchorPosition={
-                selectionPopoverAnchor
-                  ? {
-                      top: selectionPopoverAnchor.clientY,
-                      left: selectionPopoverAnchor.clientX
-                    }
-                  : undefined
-              }
-              onClose={() => setSelectionPopoverAnchor(null)}
-              transformOrigin={{
-                vertical: 'top',
-                horizontal: 'center'
-              }}
+            }}
+          >
+            {getShapeIcon(currentShape)}
+          </IconButton>
+        </Tooltip>
+
+        <Tooltip title="Select Shape" placement="right">
+          <IconButton
+            onClick={handleShapeMenuOpen}
+            size="small"
+            sx={{ width: 40, height: 32 }}
+          >
+            <ArrowDropDown />
+          </IconButton>
+        </Tooltip>
+
+        <Divider sx={{ width: '80%', my: 1 }} />
+
+        <Tooltip title="Clear Canvas" placement="right">
+          <IconButton onClick={clearCanvas} sx={{ width: 40, height: 40 }}>
+            <Clear />
+          </IconButton>
+        </Tooltip>
+
+        {/* Color Picker */}
+        <Tooltip title="Color" placement="right">
+          <Box
+            onClick={handleColorPickerOpen}
+            sx={{
+              width: 24,
+              height: 24,
+              bgcolor: currentColor,
+              border: '2px solid #fff',
+              borderRadius: '50%',
+              cursor: 'pointer',
+              boxShadow: '0 0 0 1px rgba(0,0,0,0.1)'
+            }}
+          />
+        </Tooltip>
+
+        {/* Shape Selection Popover */}
+        <Popover
+          open={Boolean(shapeMenuAnchor)}
+          anchorEl={shapeMenuAnchor}
+          onClose={handleShapeMenuClose}
+          anchorOrigin={{
+            vertical: 'center',
+            horizontal: 'right'
+          }}
+          transformOrigin={{
+            vertical: 'center',
+            horizontal: 'left'
+          }}
+        >
+          <Box sx={{ p: 1, minWidth: 150 }}>
+            <Typography
+              variant="subtitle2"
+              sx={{ px: 1, py: 0.5, color: 'text.secondary' }}
             >
-              <Box sx={{ p: 2, minWidth: 150 }}>
-                <Typography variant="subtitle1" gutterBottom>
-                  Selection Actions
-                </Typography>
+              Select Shape
+            </Typography>
+            {['line', 'rectangle', 'circle', 'triangle', 'arrow', 'star'].map(
+              shape => (
                 <Button
-                  variant="outlined"
-                  startIcon={<Layers />}
-                  onClick={solidifySelectedLines}
+                  key={shape}
+                  startIcon={getShapeIcon(shape)}
+                  onClick={() => selectShape(shape)}
                   fullWidth
-                  sx={{ mb: 1 }}
+                  variant={currentShape === shape ? 'contained' : 'text'}
+                  size="small"
+                  sx={{
+                    justifyContent: 'flex-start',
+                    mb: 0.5,
+                    textTransform: 'none'
+                  }}
                 >
-                  Solidify
+                  {getShapeName(shape)}
                 </Button>
-                <Typography variant="caption" color="text.secondary">
-                  Convert selected lines into a filled shape
-                </Typography>
-              </Box>
-            </Popover>
+              )
+            )}
+          </Box>
+        </Popover>
 
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                flexGrow: 1,
-                ml: 2
-              }}
+        {/* Color Picker Popover */}
+        <Popover
+          open={Boolean(colorPickerAnchor)}
+          anchorEl={colorPickerAnchor}
+          onClose={handleColorPickerClose}
+          anchorOrigin={{
+            vertical: 'center',
+            horizontal: 'right'
+          }}
+          transformOrigin={{
+            vertical: 'center',
+            horizontal: 'left'
+          }}
+        >
+          <Box
+            sx={{
+              p: 2,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: 1
+            }}
+          >
+            {[
+              '#000000',
+              '#e53e3e',
+              '#3182ce',
+              '#38a169',
+              '#d69e2e',
+              '#805ad5',
+              '#dd6b20',
+              '#718096'
+            ].map(color => (
+              <Box
+                key={color}
+                onClick={() => selectColor(color)}
+                sx={{
+                  width: 24,
+                  height: 24,
+                  bgcolor: color,
+                  cursor: 'pointer',
+                  borderRadius: '4px',
+                  border:
+                    currentColor === color
+                      ? '2px solid #000'
+                      : '1px solid #e0e0e0'
+                }}
+              />
+            ))}
+          </Box>
+        </Popover>
+      </Box>
+
+      {/* Main drawing area */}
+      <Box
+        sx={{
+          flex: 1,
+          ml: `${TOOLBAR_WIDTH}px`,
+          mt: `${TOP_BAR_HEIGHT}px`,
+          position: 'relative',
+          overflow: 'hidden'
+        }}
+      >
+        <Stage
+          width={
+            window.innerWidth -
+            TOOLBAR_WIDTH -
+            (libraryOpen ? LIBRARY_WIDTH : 0)
+          }
+          height={window.innerHeight - TOP_BAR_HEIGHT}
+          onMouseDown={handleMouseDown}
+          onMousemove={handleMouseMove}
+          onMouseup={handleMouseUp}
+          onWheel={handleWheel}
+          ref={stageRef}
+          scaleX={zoom}
+          scaleY={zoom}
+          x={stagePos.x}
+          y={stagePos.y}
+          style={{ cursor: getCursorStyle() }}
+        >
+          {/* Grid Layer - Behind everything */}
+          <Layer>{renderGrid()}</Layer>
+
+          {/* Drawing Layer - On top of grid */}
+          <Layer>
+            {lines.map((line, i) => {
+              const style = getLineStyle(i);
+              return (
+                <Line
+                  key={i}
+                  points={line.points}
+                  stroke={style.stroke}
+                  strokeWidth={style.strokeWidth / zoom}
+                  dash={style.dash}
+                  tension={line.isSnapped ? 0 : 0.5}
+                  lineCap="round"
+                  lineJoin="round"
+                  globalCompositeOperation="source-over"
+                  opacity={style.opacity}
+                />
+              );
+            })}
+
+            {/* Temporary shape while drawing */}
+            {tempShape && (
+              <Line
+                points={createShapePoints(tempShape)?.points || []}
+                stroke={tempShape.stroke}
+                strokeWidth={tempShape.strokeWidth / zoom}
+                dash={[5, 5]}
+                opacity={0.7}
+              />
+            )}
+
+            {/* Endpoint handles for single selected line */}
+            {renderEndpointHandles()}
+
+            {/* Selection box */}
+            {isSelecting && getSelectionBox() && (
+              <Rect
+                x={getSelectionBox().x}
+                y={getSelectionBox().y}
+                width={getSelectionBox().width}
+                height={getSelectionBox().height}
+                stroke="#0066ff"
+                strokeWidth={1 / zoom}
+                dash={[3, 3]}
+                fill="rgba(0, 102, 255, 0.1)"
+              />
+            )}
+          </Layer>
+        </Stage>
+
+        {/* Bottom Right Controls */}
+        <Box
+          sx={{
+            position: 'fixed',
+            bottom: 16,
+            right: libraryOpen ? LIBRARY_WIDTH + 16 : 16,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1,
+            zIndex: 1000
+          }}
+        >
+          {/* Zoom Controls */}
+          <Paper
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              bgcolor: 'white',
+              borderRadius: '8px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+              overflow: 'hidden'
+            }}
+          >
+            <IconButton
+              onClick={handleZoomIn}
+              size="small"
+              sx={{ borderRadius: 0 }}
             >
-              <Info color="action" fontSize="small" />
-              <Typography variant="body2" color="text.secondary">
-                {getHelpText()}
+              <ZoomIn fontSize="small" />
+            </IconButton>
+            <Divider />
+            <Box sx={{ px: 1, py: 0.5, minWidth: 40, textAlign: 'center' }}>
+              <Typography variant="caption" sx={{ fontSize: '11px' }}>
+                {Math.round(zoom * 100)}%
               </Typography>
             </Box>
+            <Divider />
+            <IconButton
+              onClick={handleZoomOut}
+              size="small"
+              sx={{ borderRadius: 0 }}
+            >
+              <ZoomOut fontSize="small" />
+            </IconButton>
+            <Divider />
+            <IconButton
+              onClick={handleZoomReset}
+              size="small"
+              sx={{ borderRadius: 0 }}
+            >
+              <ZoomOutMap fontSize="small" />
+            </IconButton>
+          </Paper>
 
-            <ButtonGroup variant="outlined" sx={{ ml: 2 }}>
-              <Tooltip title="Draw Mode">
-                <IconButton
-                  onClick={() => setModeAndReset('draw')}
-                  color={mode === 'draw' ? 'primary' : 'default'}
-                >
-                  <Edit />
-                </IconButton>
-              </Tooltip>
+          {/* Action Buttons */}
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Fab
+              size="small"
+              onClick={saveToLibrary}
+              disabled={lines.length === 0}
+              sx={{
+                bgcolor: lines.length > 0 ? 'primary.main' : 'action.disabled',
+                '&:hover': {
+                  bgcolor: lines.length > 0 ? 'primary.dark' : 'action.disabled'
+                }
+              }}
+            >
+              <Save fontSize="small" />
+            </Fab>
 
-              <Tooltip title="Fill Mode">
-                <IconButton
-                  onClick={() => setModeAndReset('fill')}
-                  color={mode === 'fill' ? 'primary' : 'default'}
-                >
-                  <FormatColorFill />
-                </IconButton>
-              </Tooltip>
-
-              <Tooltip title="Select & Drag Mode">
-                <IconButton
-                  onClick={() => setModeAndReset('select')}
-                  color={mode === 'select' ? 'primary' : 'default'}
-                >
-                  <AdsClick />
-                </IconButton>
-              </Tooltip>
-            </ButtonGroup>
-          </Toolbar>
-        </AppBar>
-
-        <Box sx={{ flex: 1, backgroundColor: 'white' }}>
-          <Stage
-            width={window.innerWidth - (libraryOpen ? LIBRARY_WIDTH : 0)}
-            height={window.innerHeight - 64}
-            onMouseDown={handleMouseDown}
-            onMousemove={handleMouseMove}
-            onMouseup={handleMouseUp}
-            ref={stageRef}
-            style={{ cursor: getCursorStyle() }}
-          >
-            {/* Grid Layer - Behind everything */}
-            <Layer>{renderGrid()}</Layer>
-
-            {/* Fill Layer - Above grid, below lines */}
-            <Layer>{renderFills()}</Layer>
-
-            {/* Drawing Layer - On top of grid */}
-            <Layer>
-              {lines.map((line, i) => {
-                const style = getLineStyle(i);
-                return (
-                  <Line
-                    key={i}
-                    points={line.points}
-                    stroke={style.stroke}
-                    strokeWidth={style.strokeWidth}
-                    dash={style.dash}
-                    tension={line.isSnapped ? 0 : 0.5}
-                    lineCap="round"
-                    lineJoin="round"
-                    globalCompositeOperation="source-over"
-                    opacity={style.opacity}
-                  />
-                );
-              })}
-
-              {/* Endpoint handles for single selected line */}
-              {renderEndpointHandles()}
-
-              {/* Selection box */}
-              {isSelecting && getSelectionBox() && (
-                <Rect
-                  x={getSelectionBox().x}
-                  y={getSelectionBox().y}
-                  width={getSelectionBox().width}
-                  height={getSelectionBox().height}
-                  stroke="#0066ff"
-                  strokeWidth={1}
-                  dash={[3, 3]}
-                  fill="rgba(0, 102, 255, 0.1)"
-                />
-              )}
-            </Layer>
-          </Stage>
+            <Fab
+              size="small"
+              onClick={() => setLibraryOpen(!libraryOpen)}
+              sx={{
+                bgcolor: libraryOpen ? 'primary.main' : 'white',
+                color: libraryOpen ? 'white' : 'primary.main',
+                '&:hover': {
+                  bgcolor: libraryOpen ? 'primary.dark' : 'grey.100'
+                }
+              }}
+            >
+              <LibraryBooks fontSize="small" />
+            </Fab>
+          </Box>
         </Box>
       </Box>
 
@@ -1722,22 +1511,23 @@ const DrawingTool = () => {
           '& .MuiDrawer-paper': {
             width: LIBRARY_WIDTH,
             boxSizing: 'border-box',
-            top: 64,
-            height: 'calc(100vh - 64px)'
+            top: TOP_BAR_HEIGHT,
+            height: `calc(100vh - ${TOP_BAR_HEIGHT}px)`,
+            bgcolor: '#fafafa'
           }
         }}
       >
         <Box sx={{ p: 2 }}>
-          <Typography variant="h6" gutterBottom>
-            Drawing Library
+          <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
+            Library
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Drag thumbnails to canvas to reuse drawings
+            Drag to reuse drawings
           </Typography>
 
           <Divider sx={{ mb: 2 }} />
 
-          <Grid container spacing={1}>
+          <Grid container spacing={1.5}>
             {library.map(drawing => (
               <Grid item xs={6} key={drawing.id}>
                 <Paper
@@ -1745,9 +1535,11 @@ const DrawingTool = () => {
                     p: 1,
                     cursor: 'grab',
                     border: '1px solid #e0e0e0',
+                    borderRadius: '8px',
+                    bgcolor: 'white',
                     '&:hover': {
                       border: '1px solid #1976d2',
-                      boxShadow: 1
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
                     }
                   }}
                   onMouseDown={e => startDragFromLibrary(drawing, e)}
@@ -1760,7 +1552,12 @@ const DrawingTool = () => {
                   </Box>
                   <Typography
                     variant="caption"
-                    sx={{ textAlign: 'center', display: 'block' }}
+                    sx={{
+                      textAlign: 'center',
+                      display: 'block',
+                      color: 'text.secondary',
+                      fontSize: '11px'
+                    }}
                   >
                     {drawing.name}
                   </Typography>
@@ -1770,14 +1567,14 @@ const DrawingTool = () => {
           </Grid>
 
           {library.length === 0 && (
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ textAlign: 'center', mt: 4 }}
-            >
-              No saved drawings yet. Create some drawings and click the Save
-              button to add them to your library.
-            </Typography>
+            <Box sx={{ textAlign: 'center', mt: 4, px: 2 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                No saved drawings
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Create drawings and save them to build your library
+              </Typography>
+            </Box>
           )}
         </Box>
       </Drawer>
