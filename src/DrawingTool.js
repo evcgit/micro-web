@@ -1776,8 +1776,8 @@ const DrawingTool = () => {
             zIndex: 1000
           }}
         >
-					{/* Action Buttons */}
-					<Box sx={{ display: 'flex', gap: 1 }}>
+          {/* Action Buttons */}
+          <Box sx={{ display: 'flex', gap: 1 }}>
             <Fab
               size="small"
               onClick={saveToLibrary}

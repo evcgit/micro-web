@@ -63,14 +63,10 @@ function App() {
 
       {/* Content Area */}
       <Box sx={{ p: 3, height: 'calc(100vh - 120px)', overflow: 'auto' }}>
-        {activeTab === 0 && (
-          <Projects />
-        )}
+        {activeTab === 0 && <Projects />}
 
         {/* Library Tab */}
-        {activeTab === 1 && (
-          <Components />
-        )}
+        {activeTab === 1 && <Components />}
       </Box>
     </Box>
   );
