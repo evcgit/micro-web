@@ -11,7 +11,8 @@ import {
   Grid,
   Popover,
   Fab,
-  TextField
+  TextField,
+  useTheme
 } from '@mui/material';
 import {
   RestartAlt,
@@ -29,15 +30,19 @@ import {
   ZoomOutMap,
   LinearScale,
   HighlightAlt,
-  PanTool
+  PanTool,
+  ArrowBack
 } from '@mui/icons-material';
 
-const DrawingTool = () => {
-  const [lines, setLines] = useState([]);
+const DrawingTool = ({ project, onSave, onBack }) => {
+  const theme = useTheme();
+  const [lines, setLines] = useState(project?.lines || []);
   const [isDrawing, setIsDrawing] = useState(false);
   const [snapTimer, setSnapTimer] = useState(null);
   const [mode, setMode] = useState('draw'); // 'draw', 'select', or 'pan'
-  const [currentColor, setCurrentColor] = useState('#000000');
+  const [currentColor, setCurrentColor] = useState(
+    theme.palette.mode === 'dark' ? '#ffffff' : '#000000'
+  );
   const [selectedLineIndices, setSelectedLineIndices] = useState([]);
   const [isSelecting, setIsSelecting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -60,7 +65,9 @@ const DrawingTool = () => {
   const [tempShape, setTempShape] = useState(null);
   const [zoom, setZoom] = useState(1);
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
-  const [boardTitle, setBoardTitle] = useState(null);
+  const [boardTitle, setBoardTitle] = useState(
+    project?.title || 'Untitled Project'
+  );
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [twoPointLineStart, setTwoPointLineStart] = useState(null);
   const [twoPointLinePreview, setTwoPointLinePreview] = useState(null);
@@ -117,13 +124,16 @@ const DrawingTool = () => {
     const endX = startX + canvasWidth + GRID_SIZE;
     const endY = startY + height + GRID_SIZE;
 
+    // Use theme-aware grid color
+    const gridColor = theme.palette.mode === 'dark' ? '#404040' : '#e0e0e0';
+
     // Vertical lines
     for (let x = startX; x <= endX; x += GRID_SIZE) {
       gridLines.push(
         <Line
           key={`v-${x}`}
           points={[x, startY, x, endY]}
-          stroke="#e0e0e0"
+          stroke={gridColor}
           strokeWidth={0.5 / zoom}
           opacity={0.85}
         />
@@ -136,7 +146,7 @@ const DrawingTool = () => {
         <Line
           key={`h-${y}`}
           points={[startX, y, endX, y]}
-          stroke="#e0e0e0"
+          stroke={gridColor}
           strokeWidth={0.5 / zoom}
           opacity={0.85}
         />
@@ -1214,7 +1224,7 @@ const DrawingTool = () => {
   };
 
   const handleTitleSave = newTitle => {
-    setBoardTitle(newTitle.trim() || 'Untitled Board');
+    setBoardTitle(newTitle.trim() || 'Untitled Project');
     setIsEditingTitle(false);
   };
 
@@ -1296,9 +1306,8 @@ const DrawingTool = () => {
       const { x, y, angle } = getLineMidpointAndAngle(line.points);
       const measurement = formatMeasurement(length);
 
-      // Calculate perpendicular offset based on line angle
       const offsetDistance = 15 / zoom;
-      const perpAngle = (angle + 90) * (Math.PI / 180); // Perpendicular to line
+      const perpAngle = (angle + 90) * (Math.PI / 180);
       const offsetX = Math.cos(perpAngle) * offsetDistance;
       const offsetY = Math.sin(perpAngle) * offsetDistance;
 
@@ -1308,16 +1317,14 @@ const DrawingTool = () => {
           x={x + offsetX}
           y={y + offsetY}
           text={measurement}
-          fontSize={12 / zoom} // Scale font size with zoom
+          fontSize={12 / zoom}
           fontFamily="Arial, sans-serif"
-          fill="#333"
+          fill={theme.palette.mode === 'dark' ? '#ffffff' : '#000000'}
           align="center"
-          offsetX={0} // Will be set based on text width
-          offsetY={6 / zoom} // Center vertically
+          offsetX={0}
+          offsetY={6 / zoom}
           rotation={angle}
-          // stroke="white"
-          strokeWidth={3 / zoom}
-          paintOrder="stroke fill" // Draw stroke behind fill for better readability
+          paintOrder="stroke fill"
         />
       );
     });
@@ -1345,13 +1352,12 @@ const DrawingTool = () => {
             text={measurement}
             fontSize={12 / zoom}
             fontFamily="Arial, sans-serif"
-            fill="#666"
+            fill={theme.palette.mode === 'dark' ? '#ffffff' : '#000000'}
             align="center"
             offsetX={0}
             offsetY={6 / zoom}
             rotation={angle}
             opacity={0.8}
-            strokeWidth={3 / zoom}
             paintOrder="stroke fill"
           />
         );
@@ -1361,13 +1367,36 @@ const DrawingTool = () => {
     return measurements;
   };
 
+  // Save project function
+  const saveProject = () => {
+    if (onSave) {
+      onSave({
+        title: boardTitle,
+        lines: lines
+        // You can add more project data here like description, etc.
+      });
+    }
+  };
+
+  // Auto-save when lines or title change
+  useEffect(() => {
+    if (project && (lines.length > 0 || boardTitle !== project.title)) {
+      // Debounce auto-save to avoid too frequent saves
+      const saveTimer = setTimeout(() => {
+        saveProject();
+      }, 1000);
+
+      return () => clearTimeout(saveTimer);
+    }
+  }, [lines, boardTitle]);
+
   return (
     <Box
       sx={{
         display: 'flex',
         width: '100%',
         height: '100vh',
-        bgcolor: '#f8f9fa'
+        bgcolor: theme.palette.background.default
       }}
     >
       {/* Top Bar */}
@@ -1378,26 +1407,35 @@ const DrawingTool = () => {
           left: '10%',
           transform: 'translateX(-50%)',
           height: TOP_BAR_HEIGHT,
-          bgcolor: 'white',
+          bgcolor: theme.palette.background.paper,
           borderRadius: '12px',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+          boxShadow:
+            theme.palette.mode === 'dark'
+              ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+              : '0 4px 20px rgba(0, 0, 0, 0.15)',
           display: 'flex',
           alignItems: 'center',
           px: 2,
           zIndex: 1300,
           minWidth: 300,
-          maxWidth: 500
+          maxWidth: 500,
+          border:
+            theme.palette.mode === 'dark'
+              ? `1px solid ${theme.palette.divider}`
+              : 'none'
         }}
       >
-        <IconButton size="small" sx={{ mr: 1 }}>
-          <Close />
-        </IconButton>
+        <Tooltip title="Back to Projects">
+          <IconButton size="small" sx={{ mr: 1 }} onClick={onBack}>
+            <ArrowBack />
+          </IconButton>
+        </Tooltip>
 
         {isEditingTitle ? (
           <TextField
             autoFocus
             variant="standard"
-            placeholder="Untitled Board"
+            placeholder="Untitled Project"
             value={boardTitle}
             onChange={e => setBoardTitle(e.target.value)}
             onBlur={e => handleTitleSave(e.target.value)}
@@ -1406,7 +1444,7 @@ const DrawingTool = () => {
               flexGrow: 1,
               '& .MuiInput-underline:before': { borderBottom: 'none' },
               '& .MuiInput-underline:after': {
-                borderBottom: '2px solid #1976d2'
+                borderBottom: `2px solid ${theme.palette.primary.main}`
               },
               '& .MuiInput-underline:hover:not(.Mui-disabled):before': {
                 borderBottom: 'none'
@@ -1415,7 +1453,8 @@ const DrawingTool = () => {
                 fontSize: '1.25rem',
                 fontWeight: 500,
                 textAlign: 'center',
-                padding: '4px 8px'
+                padding: '4px 8px',
+                color: theme.palette.text.primary
               }
             }}
           />
@@ -1430,15 +1469,22 @@ const DrawingTool = () => {
               px: 1,
               py: 0.5,
               borderRadius: '4px',
+              color: theme.palette.text.primary,
               '&:hover': {
-                bgcolor: 'rgba(0, 0, 0, 0.04)'
+                bgcolor: theme.palette.action.hover
               }
             }}
             onClick={handleTitleEdit}
           >
-            {boardTitle || 'Untitled Board'}
+            {boardTitle}
           </Typography>
         )}
+
+        <Tooltip title="Save Project">
+          <IconButton size="small" sx={{ ml: 1 }} onClick={saveProject}>
+            <Save />
+          </IconButton>
+        </Tooltip>
       </Box>
 
       {/* Left Toolbar */}
@@ -1448,15 +1494,22 @@ const DrawingTool = () => {
           left: 16,
           top: TOP_BAR_HEIGHT + 32,
           width: TOOLBAR_WIDTH,
-          bgcolor: 'white',
+          bgcolor: theme.palette.background.paper,
           borderRadius: '12px',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+          boxShadow:
+            theme.palette.mode === 'dark'
+              ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+              : '0 4px 20px rgba(0, 0, 0, 0.15)',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           py: 2,
           gap: 1,
-          zIndex: 1200
+          zIndex: 1200,
+          border:
+            theme.palette.mode === 'dark'
+              ? `1px solid ${theme.palette.divider}`
+              : 'none'
         }}
       >
         <Tooltip title="Select & Move" placement="right">
@@ -1468,7 +1521,10 @@ const DrawingTool = () => {
               height: 40,
               bgcolor: mode === 'select' ? 'primary.light' : 'transparent',
               '&:hover': {
-                bgcolor: mode === 'select' ? 'primary.light' : 'action.hover'
+                bgcolor:
+                  mode === 'select'
+                    ? 'primary.light'
+                    : theme.palette.action.hover
               }
             }}
           >
@@ -1485,7 +1541,8 @@ const DrawingTool = () => {
               height: 40,
               bgcolor: mode === 'pan' ? 'primary.light' : 'transparent',
               '&:hover': {
-                bgcolor: mode === 'pan' ? 'primary.light' : 'action.hover'
+                bgcolor:
+                  mode === 'pan' ? 'primary.light' : theme.palette.action.hover
               }
             }}
           >
@@ -1505,7 +1562,8 @@ const DrawingTool = () => {
               height: 40,
               bgcolor: mode === 'draw' ? 'primary.light' : 'transparent',
               '&:hover': {
-                bgcolor: mode === 'draw' ? 'primary.light' : 'action.hover'
+                bgcolor:
+                  mode === 'draw' ? 'primary.light' : theme.palette.action.hover
               }
             }}
           >
@@ -1517,7 +1575,13 @@ const DrawingTool = () => {
           <IconButton
             onClick={handleShapeMenuOpen}
             size="small"
-            sx={{ width: 40, height: 32 }}
+            sx={{
+              width: 40,
+              height: 32,
+              '&:hover': {
+                bgcolor: theme.palette.action.hover
+              }
+            }}
           >
             <ArrowDropDown />
           </IconButton>
@@ -1526,7 +1590,16 @@ const DrawingTool = () => {
         <Divider sx={{ width: '80%', my: 1 }} />
 
         <Tooltip title="Clear Canvas" placement="right">
-          <IconButton onClick={clearCanvas} sx={{ width: 40, height: 40 }}>
+          <IconButton
+            onClick={clearCanvas}
+            sx={{
+              width: 40,
+              height: 40,
+              '&:hover': {
+                bgcolor: theme.palette.action.hover
+              }
+            }}
+          >
             <RestartAlt />
           </IconButton>
         </Tooltip>
@@ -1539,10 +1612,10 @@ const DrawingTool = () => {
               width: 24,
               height: 24,
               bgcolor: currentColor,
-              border: '2px solid #fff',
+              border: `2px solid ${theme.palette.background.paper}`,
               borderRadius: '50%',
               cursor: 'pointer',
-              boxShadow: '0 0 0 1px rgba(0,0,0,0.1)'
+              boxShadow: `0 0 0 1px ${theme.palette.divider}`
             }}
           />
         </Tooltip>
@@ -1584,7 +1657,9 @@ const DrawingTool = () => {
                     currentShape === shape ? 'primary.main' : 'text.secondary',
                   '&:hover': {
                     bgcolor:
-                      currentShape === shape ? 'primary.light' : 'action.hover'
+                      currentShape === shape
+                        ? 'primary.light'
+                        : theme.palette.action.hover
                   }
                 }}
                 title={getShapeName(shape)}
@@ -1796,10 +1871,16 @@ const DrawingTool = () => {
               size="small"
               onClick={() => setLibraryOpen(!libraryOpen)}
               sx={{
-                bgcolor: libraryOpen ? 'primary.main' : 'white',
-                color: libraryOpen ? 'white' : 'primary.main',
+                bgcolor: libraryOpen
+                  ? 'primary.main'
+                  : theme.palette.background.paper,
+                color: libraryOpen
+                  ? theme.palette.primary.contrastText
+                  : theme.palette.primary.main,
                 '&:hover': {
-                  bgcolor: libraryOpen ? 'primary.dark' : 'grey.100'
+                  bgcolor: libraryOpen
+                    ? 'primary.dark'
+                    : theme.palette.action.hover
                 }
               }}
             >
@@ -1812,9 +1893,12 @@ const DrawingTool = () => {
             sx={{
               display: 'flex',
               flexDirection: 'row-reverse',
-              bgcolor: 'white',
+              bgcolor: theme.palette.background.paper,
               borderRadius: '8px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+              boxShadow:
+                theme.palette.mode === 'dark'
+                  ? '0 2px 8px rgba(0,0,0,0.3)'
+                  : '0 2px 8px rgba(0,0,0,0.15)',
               overflow: 'hidden'
             }}
           >
@@ -1855,12 +1939,18 @@ const DrawingTool = () => {
           right: libraryOpen ? 0 : -LIBRARY_WIDTH,
           width: LIBRARY_WIDTH,
           height: '100vh',
-          bgcolor: '#fafafa',
-          boxShadow: libraryOpen ? '0 0 20px rgba(0,0,0,0.15)' : 'none',
+          bgcolor: theme.palette.background.default,
+          boxShadow: libraryOpen
+            ? theme.palette.mode === 'dark'
+              ? '0 0 20px rgba(0,0,0,0.5)'
+              : '0 0 20px rgba(0,0,0,0.15)'
+            : 'none',
           transition: 'right 0.3s ease-in-out',
           zIndex: 1200,
           overflow: 'auto',
-          borderLeft: libraryOpen ? '1px solid #e0e0e0' : 'none'
+          borderLeft: libraryOpen
+            ? `1px solid ${theme.palette.divider}`
+            : 'none'
         }}
       >
         <Box sx={{ p: 2 }}>
@@ -1880,12 +1970,15 @@ const DrawingTool = () => {
                   sx={{
                     p: 1,
                     cursor: 'grab',
-                    border: '1px solid #e0e0e0',
+                    border: `1px solid ${theme.palette.divider}`,
                     borderRadius: '8px',
-                    bgcolor: 'white',
+                    bgcolor: theme.palette.background.paper,
                     '&:hover': {
-                      border: '1px solid #1976d2',
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                      border: `1px solid ${theme.palette.primary.main}`,
+                      boxShadow:
+                        theme.palette.mode === 'dark'
+                          ? '0 2px 8px rgba(0,0,0,0.3)'
+                          : '0 2px 8px rgba(0,0,0,0.1)'
                     }
                   }}
                   onMouseDown={e => startDragFromLibrary(drawing, e)}

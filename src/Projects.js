@@ -10,10 +10,11 @@ import {
   Grid
 } from '@mui/material';
 import { Folder, Add } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 
 const Projects = () => {
-  const [newProjectDialog, setNewProjectDialog] = useState(false);
   const [projects, setProjects] = useState([]);
+  const navigate = useNavigate();
 
   const formatDate = date => {
     if (!date) return 'N/A';
@@ -22,6 +23,28 @@ const Projects = () => {
       month: 'short',
       day: 'numeric',
       year: 'numeric'
+    });
+  };
+
+  const createNewProject = () => {
+    const newProject = {
+      id: Date.now(),
+      title: 'Untitled Project',
+      description: '',
+      createdDate: new Date().toISOString(),
+      lastModified: new Date().toISOString(),
+      lines: [] // Empty drawing data
+    };
+
+    // Navigate to drawing tool with new project
+    navigate(`/project/${newProject.id}`, {
+      state: { project: newProject, isNew: true }
+    });
+  };
+
+  const openProject = project => {
+    navigate(`/project/${project.id}`, {
+      state: { project }
     });
   };
 
@@ -39,7 +62,7 @@ const Projects = () => {
           <Fab
             variant="extended"
             color="primary"
-            onClick={() => setNewProjectDialog(true)}
+            onClick={createNewProject}
             sx={{ textTransform: 'none' }}
           >
             <Add sx={{ mr: 1 }} />
@@ -61,7 +84,10 @@ const Projects = () => {
                 }
               }}
             >
-              <CardActionArea sx={{ height: '100%', p: 0 }}>
+              <CardActionArea
+                sx={{ height: '100%', p: 0 }}
+                onClick={() => openProject(project)}
+              >
                 <CardContent
                   sx={{
                     height: 180,
@@ -113,7 +139,7 @@ const Projects = () => {
           <Button
             variant="contained"
             startIcon={<Add />}
-            onClick={() => setNewProjectDialog(true)}
+            onClick={createNewProject}
           >
             Create Project
           </Button>

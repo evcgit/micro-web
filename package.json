@@ -27,7 +27,8 @@
     "konva": "^9.3.20",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-konva": "^18.2.10"
+    "react-konva": "^18.2.10",
+    "react-router-dom": "^7.6.2"
   },
   "devDependencies": {
     "@babel/core": "^7.22.0",
