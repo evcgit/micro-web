@@ -1,64 +1,72 @@
 import React, { useState } from 'react';
+import { Box, Tabs, Tab, IconButton, Tooltip } from '@mui/material';
 import {
-  Box,
-  Typography,
-  Card,
-  CardContent,
-  CardActionArea,
-  Grid,
-  Fab,
-  Tabs,
-  Tab,
-  AppBar,
-  Toolbar,
-  IconButton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  Button,
-  Chip
-} from '@mui/material';
-import {
-  Add,
-  Dashboard,
   LibraryBooks,
-  Edit,
   Folder,
-  Image,
-  ArrowBack
+  Brightness4,
+  Brightness7
 } from '@mui/icons-material';
-import './App.css';
-import DrawingTool from './DrawingTool';
+import { useTheme } from './Context/ThemeContext';
 import Projects from './Projects';
 import Components from './Components';
 
 function App() {
   const [activeTab, setActiveTab] = useState(0);
+  const { darkMode, toggleDarkMode } = useTheme();
 
   const handleTabChange = (event, newValue) => {
     setActiveTab(newValue);
   };
 
   return (
-    <Box sx={{ height: '100vh', bgcolor: '#f5f5f5' }}>
-      {/* Tab Navigation */}
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'white' }}>
-        <Tabs value={activeTab} onChange={handleTabChange} centered>
-          <Tab
-            icon={<Folder />}
-            label="Projects"
-            iconPosition="start"
-            sx={{ minHeight: 64 }}
-          />
-          <Tab
-            icon={<LibraryBooks />}
-            label="Component Library"
-            iconPosition="start"
-            sx={{ minHeight: 64 }}
-          />
-        </Tabs>
+    <Box sx={{ height: '100vh' }}>
+      {/* Header with Tab Navigation and Theme Toggle */}
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          pl: 2,
+          pt: 1,
+          pr: 2
+        }}
+      >
+        {/* Tab Navigation */}
+        <Box>
+          <Tabs
+            value={activeTab}
+            onChange={handleTabChange}
+            sx={{
+              minHeight: '36px',
+              '& .MuiTab-root': {
+                minHeight: '36px',
+                fontSize: '0.875rem',
+                padding: '6px 12px',
+                minWidth: 'auto'
+              }
+            }}
+          >
+            <Tab
+              icon={<Folder sx={{ fontSize: '1.1rem' }} />}
+              label="Projects"
+              iconPosition="start"
+            />
+            <Tab
+              icon={<LibraryBooks sx={{ fontSize: '1.1rem' }} />}
+              label="Components"
+              iconPosition="start"
+            />
+          </Tabs>
+        </Box>
+
+        {/* Theme Toggle */}
+        <Tooltip
+          title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          <IconButton onClick={toggleDarkMode} sx={{ ml: 2 }} color="inherit">
+            {darkMode ? <Brightness7 /> : <Brightness4 />}
+          </IconButton>
+        </Tooltip>
       </Box>
 
       {/* Content Area */}

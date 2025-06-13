@@ -27,19 +27,6 @@ const Components = () => {
 
   return (
     <Box>
-      <Box
-        sx={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          mb: 3
-        }}
-      >
-        <Typography variant="h4" sx={{ fontWeight: 600 }}>
-          Component Library
-        </Typography>
-      </Box>
-
       <Grid container spacing={3}>
         {libraryComponents.map(component => (
           <Grid item xs={12} sm={6} md={4} lg={3} key={component.id}>

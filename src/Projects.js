@@ -35,9 +35,6 @@ const Projects = () => {
           mb: 3
         }}
       >
-        <Typography variant="h4" sx={{ fontWeight: 600 }}>
-          My Projects
-        </Typography>
         {projects.length > 0 && (
           <Fab
             variant="extended"
