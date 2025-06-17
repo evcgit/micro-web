@@ -1,6 +1,6 @@
 import axios from 'axios';
-import { getTokens, setTokens, clearTokens } from './../utils/helpers';
-import { ACTION_TYPES } from '../utils/const';
+import { getTokens, setTokens, clearTokens } from './Utils/Helpers';
+import { ACTION_TYPES } from '../Context/AppContext';
 
 class ApiError extends Error {
   // TODO: Implement Sentry error and exception handling for ApiErrors
@@ -129,7 +129,8 @@ const handleApiResponse = error => {
     console.warn('request error: ', error.request);
     throw new ApiError({
       status: 500,
-      message: 'No response received! Please try your action again, or refresh the page.',
+      message:
+        'No response received! Please try your action again, or refresh the page.',
       data: error.request
     });
   } else {
@@ -180,7 +181,12 @@ const handleTokenValidity = async () => {
   }
 };
 
-export const makeApiRequest = async (method, url, body = null, queryParams = {}) => {
+export const makeApiRequest = async (
+  method,
+  url,
+  body = null,
+  queryParams = {}
+) => {
   await initializeCsrf();
   if (!url.includes('/auth/token/')) {
     await handleTokenValidity();
@@ -191,7 +197,10 @@ export const makeApiRequest = async (method, url, body = null, queryParams = {})
       url,
       method,
       params: queryParams,
-      data: ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && body ? body : undefined
+      data:
+        ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && body
+          ? body
+          : undefined
     });
 
     return response.data;

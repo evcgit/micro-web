@@ -1,11 +1,10 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Stage, Layer, Line, Rect, Circle, Text } from 'react-konva';
 import {
   Box,
   Typography,
   IconButton,
   Tooltip,
-  Drawer,
   Paper,
   Divider,
   Grid,
@@ -24,7 +23,6 @@ import {
   RadioButtonUnchecked,
   ChangeHistory,
   ArrowForward,
-  Close,
   ZoomIn,
   ZoomOut,
   ZoomOutMap,
@@ -770,16 +768,6 @@ const DrawingTool = ({ project, onSave, onBack }) => {
     setSelectedLineIndices([]);
   };
 
-  const deleteSelectedItems = () => {
-    if (selectedLineIndices.length > 0) {
-      const updatedLines = lines.filter(
-        (_, index) => !selectedLineIndices.includes(index)
-      );
-      setLines(updatedLines);
-      setSelectedLineIndices([]);
-    }
-  };
-
   const changeSelectedLinesColor = color => {
     if (selectedLineIndices.length > 0) {
       const updatedLines = [...lines];
@@ -790,13 +778,6 @@ const DrawingTool = ({ project, onSave, onBack }) => {
         };
       });
       setLines(updatedLines);
-    }
-  };
-
-  const handleKeyDown = event => {
-    if (event.key === 'Backspace' || event.key === 'Delete') {
-      event.preventDefault();
-      deleteSelectedItems();
     }
   };
 
@@ -922,7 +903,7 @@ const DrawingTool = ({ project, onSave, onBack }) => {
           }
         ];
 
-      case 'circle':
+      case 'circle': {
         // Create circle using multiple connected segments
         const centerX = (startX + endX) / 2;
         const centerY = (startY + endY) / 2;
@@ -948,8 +929,9 @@ const DrawingTool = ({ project, onSave, onBack }) => {
         }
 
         return circleLines;
+      }
 
-      case 'triangle':
+      case 'triangle': {
         // Create triangle with 3 separate lines
         const triTopX = (startX + endX) / 2;
         const triTopY = Math.min(startY, endY);
@@ -975,8 +957,9 @@ const DrawingTool = ({ project, onSave, onBack }) => {
             isSnapped: true
           }
         ];
+      }
 
-      case 'arrow':
+      case 'arrow': {
         // Create arrow with separate lines for body and head
         const headSize = Math.min(Math.abs(width), Math.abs(height)) * 0.3;
         const bodyEndX = endX - (width > 0 ? headSize : -headSize);
@@ -1002,6 +985,7 @@ const DrawingTool = ({ project, onSave, onBack }) => {
             isSnapped: true
           }
         ];
+      }
 
       default:
         return null;
@@ -1061,6 +1045,23 @@ const DrawingTool = ({ project, onSave, onBack }) => {
 
   // Cleanup timer on unmount and add keyboard listener
   useEffect(() => {
+    const deleteSelectedItems = () => {
+      if (selectedLineIndices.length > 0) {
+        const updatedLines = lines.filter(
+          (_, index) => !selectedLineIndices.includes(index)
+        );
+        setLines(updatedLines);
+        setSelectedLineIndices([]);
+      }
+    };
+    // Define handleKeyDown inside useEffect to avoid dependency issues
+    const handleKeyDown = event => {
+      if (event.key === 'Backspace' || event.key === 'Delete') {
+        event.preventDefault();
+        deleteSelectedItems();
+      }
+    };
+
     // Add keyboard event listener
     document.addEventListener('keydown', handleKeyDown);
 
@@ -1070,7 +1071,7 @@ const DrawingTool = ({ project, onSave, onBack }) => {
       }
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [snapTimer, selectedLineIndices]);
+  }, [snapTimer, selectedLineIndices, lines]);
 
   const getCursorStyle = () => {
     if (isDraggingFromLibrary) return 'copy';
@@ -1368,7 +1369,7 @@ const DrawingTool = ({ project, onSave, onBack }) => {
   };
 
   // Save project function
-  const saveProject = () => {
+  const saveProject = useCallback(() => {
     if (onSave) {
       onSave({
         title: boardTitle,
@@ -1376,7 +1377,7 @@ const DrawingTool = ({ project, onSave, onBack }) => {
         // You can add more project data here like description, etc.
       });
     }
-  };
+  }, [onSave, boardTitle, lines]);
 
   // Auto-save when lines or title change
   useEffect(() => {
@@ -1388,7 +1389,7 @@ const DrawingTool = ({ project, onSave, onBack }) => {
 
       return () => clearTimeout(saveTimer);
     }
-  }, [lines, boardTitle]);
+  }, [lines, boardTitle, project, saveProject]);
 
   return (
     <Box
